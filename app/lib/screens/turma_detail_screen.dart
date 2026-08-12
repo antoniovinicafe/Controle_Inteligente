@@ -131,11 +131,16 @@ class _TurmaDetailScreenState extends State<TurmaDetailScreen> {
               [
                 if (aluno.matricula != null && aluno.matricula!.isNotEmpty)
                   aluno.matricula!,
+                // Só a sigla: "Engenharia de Telecomunicações" por extenso
+                // não cabe na linha e empurra a frequência pra fora.
+                if (aluno.curso != null) _sigla(aluno.curso!),
                 aluno.frequencia.semAulas
                     ? 'sem aulas ainda'
                     : '${aluno.frequencia.presencas}/${aluno.frequencia.total} aulas',
               ].join(' · '),
               style: Tipos.dado(context),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -180,6 +185,13 @@ class _SeloFrequencia extends StatelessWidget {
     final pct = frequencia.percentual ?? 0;
     return Selo(texto: '$pct%', cor: corDaFrequencia(context, pct));
   }
+}
+
+/// "Engenharia de Computação" -> "COMPUTAÇÃO". O servidor manda o nome por
+/// extenso porque é o dado correto; a lista é que não tem largura pra ele.
+String _sigla(String curso) {
+  final ultima = curso.split(' ').last;
+  return ultima.toUpperCase();
 }
 
 String _iniciais(String nome) {

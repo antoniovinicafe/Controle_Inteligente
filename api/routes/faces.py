@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify, g
 from utils.auth_middleware import login_required
 from utils.device_auth import device_required
 from utils.db import get_conn, put_conn
-from services.face_service import calcular_embedding, MODELO
+from services.face_service import calcular_embedding, MODELO, RostoFalsoError
 
 bp = Blueprint("faces", __name__, url_prefix="/api/faces")
 
@@ -115,7 +115,7 @@ def _registrar(cur, evento_id, usuario_id, liberado, motivo):
 # Vão pra resposta como `etapa` pra que o leitor da porta saiba ONDE
 # parou sem precisar interpretar o texto do motivo - o texto é escrito
 # pra humano e pode mudar; isto é contrato.
-ETAPAS = ("rosto", "identidade", "aula", "lista")
+ETAPAS = ("rosto", "vivacidade", "identidade", "aula", "lista")
 
 
 def _resposta(liberado, motivo, cur, evento_id=None, usuario_id=None, nome=None, etapa=None):
@@ -160,9 +160,19 @@ def reconhecer_rosto():
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            # (0) Nem chegou a ser um rosto: vale log, é tentativa de acesso.
+            # (0) Nem chegou a ser um rosto de gente presente.
+            #
+            # RostoFalsoError vem ANTES do ValueError genérico de propósito:
+            # é subclasse dele, e na ordem inversa o except largo engoliria a
+            # tentativa de burla e ela viraria etapa "rosto" — que a gente
+            # não registra. Foto erguida na câmera some do log, justamente o
+            # oposto do que se quer.
             try:
                 embedding = calcular_embedding(imagem_bytes)
+            except RostoFalsoError as e:
+                corpo = _resposta(False, str(e), cur, etapa="vivacidade")
+                conn.commit()
+                return jsonify(corpo), 200
             except ValueError as e:
                 corpo = _resposta(False, str(e), cur, etapa="rosto")
                 conn.commit()

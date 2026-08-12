@@ -31,12 +31,19 @@ class AlunoFrequencia {
   final String id;
   final String nome;
   final String? matricula;
+
+  /// Deduzido do e-mail institucional pelo servidor (gec -> Computação,
+  /// get -> Telecomunicações). Null quando o e-mail não é do Inatel.
+  /// Ninguém digita isso, então não tem como divergir do cadastro.
+  final String? curso;
+
   final Frequencia frequencia;
 
   const AlunoFrequencia({
     required this.id,
     required this.nome,
     required this.matricula,
+    required this.curso,
     required this.frequencia,
   });
 
@@ -44,6 +51,7 @@ class AlunoFrequencia {
         id: json['id'] as String,
         nome: json['nome'] as String,
         matricula: json['matricula'] as String?,
+        curso: json['curso'] as String?,
         frequencia: Frequencia.fromJson(json),
       );
 }

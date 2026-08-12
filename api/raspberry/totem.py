@@ -84,11 +84,12 @@ Y_VEREDITO, Y_NOME, Y_DETALHE, Y_AVISO = 868, 946, 990, 1046
 
 # As quatro checagens do servidor, na ordem. `etapa` na resposta diz
 # em qual delas parou.
-ETAPAS = ("rosto", "identidade", "aula", "lista")
-ROTULOS = ("ROSTO", "IDENTIDADE", "AULA", "LISTA")
+ETAPAS = ("rosto", "vivacidade", "identidade", "aula", "lista")
+ROTULOS = ("ROSTO", "VIVACIDADE", "IDENTIDADE", "AULA", "LISTA")
 
 # Texto de cada negativa, escrito pra quem está na porta - não pro log.
 EXPLICACAO = {
+    "vivacidade": "Foto ou tela não abre a porta",
     "identidade": "Cadastre seu rosto no aplicativo",
     "aula": "Nenhuma aula acontecendo aqui agora",
     "lista": "Você não foi convidado para esta aula",

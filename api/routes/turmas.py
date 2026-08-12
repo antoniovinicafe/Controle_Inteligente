@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, g
 
 from utils.auth_middleware import login_required, require_role
+from utils.curso import curso_do_email
 from utils.db import get_conn, put_conn
 
 bp = Blueprint("turmas", __name__, url_prefix="/api/turmas")
@@ -206,11 +207,12 @@ def frequencia_da_turma(turma_id):
 
             cur.execute(
                 """
-                select p.id, p.nome, p.matricula,
+                select p.id, p.nome, p.matricula, u.email,
                        count(e.id) as total,
                        count(e.id) filter (where ep.status = 'liberado') as presencas
                 from turma_alunos ta
                 join profiles p on p.id = ta.aluno_id
+                join auth.users u on u.id = p.id
                 left join evento_participantes ep
                        on ep.usuario_id = ta.aluno_id and ep.turma_id = ta.turma_id
                 left join eventos e
@@ -218,7 +220,7 @@ def frequencia_da_turma(turma_id):
                       and e.data_fim < now()
                       and e.status != 'cancelado'
                 where ta.turma_id = %s
-                group by p.id, p.nome, p.matricula
+                group by p.id, p.nome, p.matricula, u.email
                 order by p.nome
                 """,
                 (turma_id,),
@@ -229,7 +231,8 @@ def frequencia_da_turma(turma_id):
 
     return jsonify([
         {
-            **a,
+            **{k: v for k, v in a.items() if k != "email"},   # e-mail não sai daqui
+            "curso": curso_do_email(a["email"]),
             "faltas": a["total"] - a["presencas"],
             "percentual": round(a["presencas"] * 100 / a["total"]) if a["total"] else None,
         }

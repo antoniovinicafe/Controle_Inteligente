@@ -12,3 +12,6 @@ tf-keras
 
 # testes
 pytest==8.3.4
+
+# anti-spoofing do DeepFace (MiniFASNet) exige torch
+torch
