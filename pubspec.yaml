@@ -1,0 +1,74 @@
+name: inatel_access
+description: INATEL facial access control app
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Traduz os diálogos que vêm prontos do Material (seletor de data e de
+  # hora). Sem isto eles saem em inglês - "Select date", "Cancel" - no meio
+  # de um app inteiramente em português, e é justamente na criação de aula
+  # que eles aparecem.
+  flutter_localizations:
+    sdk: flutter
+  supabase_flutter: ^2.8.0   # login/sessão/JWT
+  provider: ^6.1.2           # gerenciamento de estado
+  
+  # Camera
+  camera: ^0.10.5+9
+  image_picker: ^1.1.2
+
+  # HTTP & encoding
+  http: ^1.2.1
+
+  # Ajustes locais (endereço do servidor). Já vinha junto do
+  # supabase_flutter; aqui só vira dependência direta.
+  shared_preferences: ^2.5.5
+
+  # UI extras
+  flutter_animate: ^4.5.0
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/licencas/
+
+  # Fontes embutidas no APK, não baixadas em tempo de execução.
+  #
+  # Antes vinham do pacote google_fonts, que busca na rede no primeiro uso e
+  # guarda em cache. Numa feira - rede instável, celular que nunca abriu o
+  # app - a primeira tela caía pra Roboto e o sistema de duas vozes
+  # (Jost pra pessoa, mono pra máquina) simplesmente sumia. Embutido custa
+  # ~490 KB e nunca depende de rede.
+  #
+  # Só os pesos que o app usa de verdade: conferido com
+  # `grep -rho "FontWeight.w[0-9]*" lib/`.
+  fonts:
+    - family: Jost
+      fonts:
+        - asset: assets/fonts/Jost-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Jost-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Jost-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Jost-Bold.ttf
+          weight: 700
+    - family: IBMPlexMono
+      fonts:
+        - asset: assets/fonts/IBMPlexMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/IBMPlexMono-Medium.ttf
+          weight: 500
