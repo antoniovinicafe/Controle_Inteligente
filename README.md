@@ -73,5 +73,16 @@ não precisa recompilar quando o IP da máquina muda.
 
 ## Estado
 
-App e API funcionando ponta a ponta, validados com duas pessoas distintas.
-O que falta está anotado em [`app/HANDOFF.md`](app/HANDOFF.md).
+Funcionando ponta a ponta, validado em 12/08/2026 com o ciclo completo:
+rosto cadastrado pela câmera do aplicativo num celular físico, pessoa
+reconhecida na porta pela Raspberry, presença gravada. As quatro checagens
+foram observadas acertando, inclusive a mais sutil — alguém **reconhecido**
+e ainda assim negado por não estar na lista daquela aula.
+
+O que falta:
+
+- **Login exige internet.** A autenticação é no Supabase (nuvem). Sem rede
+  no local, ninguém entra no app — nem o professor. Reconhecimento e
+  presença funcionam na rede local, entrar não.
+- Layout do totem é fixo em 1080p; o mini monitor de 7" tem outra resolução
+  (marcado com `ponytail:` em `api/raspberry/totem.py`).
