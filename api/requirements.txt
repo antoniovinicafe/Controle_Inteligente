@@ -9,3 +9,6 @@ pgvector==0.3.6
 deepface==0.0.93
 numpy==1.26.4
 tf-keras
+
+# testes
+pytest==8.3.4

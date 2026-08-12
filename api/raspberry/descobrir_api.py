@@ -145,19 +145,24 @@ def resolver(api_explicito=None, avisar=print):
     if api_explicito:
         return normalizar(api_explicito)
 
-    do_ambiente = normalizar(os.environ.get("FETIN_API", ""))
-    if do_ambiente:
-        avisar(f"Servidor pelo FETIN_API: {do_ambiente}")
-        return do_ambiente
+    # FETIN_API e o cache são PISTAS, não ordens: os dois são endereços
+    # anotados antes e que envelhecem sozinhos quando o DHCP renova. Por isso
+    # ambos são verificados, e um que não responde não impede a varredura.
+    # (Foi assim que a porta ficou fora do ar na primeira vez: o FETIN_API do
+    # serviço apontava pra um IP de dois dias atrás.)
+    for origem, candidato in (
+        ("FETIN_API", normalizar(os.environ.get("FETIN_API", ""))),
+        ("último endereço salvo", _ler_cache()),
+    ):
+        if not candidato:
+            continue
+        avisar(f"Testando {origem}: {candidato}")
+        if responde(candidato):
+            gravar_cache(candidato)
+            return candidato
+        avisar(f"  não respondeu — o IP deve ter mudado")
 
-    do_cache = _ler_cache()
-    if do_cache:
-        avisar(f"Testando o último endereço conhecido: {do_cache}")
-        if responde(do_cache):
-            return do_cache
-        avisar("Não respondeu — o IP deve ter mudado. Varrendo a rede...")
-    else:
-        avisar("Nenhum endereço salvo. Varrendo a rede...")
+    avisar("Varrendo a rede local...")
 
     achado = varrer()
     if achado:

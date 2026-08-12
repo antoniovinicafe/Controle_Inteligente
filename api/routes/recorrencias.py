@@ -16,6 +16,29 @@ from utils.db import get_conn, put_conn
 bp = Blueprint("recorrencias", __name__, url_prefix="/api/recorrencias")
 
 
+def expandir_ocorrencias(dias_semana, data_inicio, data_fim):
+    """Datas em que a regra cai, do início ao fim, inclusive nas pontas.
+
+    Estava embutida no meio do laço que grava no banco, o que a tornava
+    impossível de testar sem um Postgres de pé. Separada, é uma função pura
+    de calendário - e precisa ser testada porque o aplicativo faz a MESMA
+    conta do lado dele (`contarOcorrencias` em app/lib/models/recorrencia.dart)
+    pra prometer "vai criar 15 aulas" ANTES de enviar. Se as duas contas
+    discordarem, o app mente pro professor sobre o que o botão vai fazer.
+
+    `dias_semana` usa 1=segunda .. 7=domingo, que é exatamente o que
+    `date.isoweekday()` devolve no Python e `DateTime.weekday` no Dart - é
+    essa coincidência que deixa os dois lados comparáveis.
+    """
+    datas = []
+    dia = data_inicio
+    while dia <= data_fim:
+        if dia.isoweekday() in dias_semana:
+            datas.append(dia)
+        dia += timedelta(days=1)
+    return datas
+
+
 def _dono_da_recorrencia_ou_admin(cur, recorrencia_id):
     cur.execute("select * from recorrencias where id = %s", (recorrencia_id,))
     rec = cur.fetchone()
@@ -108,36 +131,33 @@ def criar_recorrencia():
             alunos = [row["aluno_id"] for row in cur.fetchall()]
 
             total_eventos = 0
-            dia = data_inicio
-            while dia <= data_fim:
-                if dia.isoweekday() in dias_semana:
+            for dia in expandir_ocorrencias(dias_semana, data_inicio, data_fim):
+                cur.execute(
+                    """
+                    insert into eventos
+                        (titulo, descricao, local, criador_id, data_inicio, data_fim,
+                         capacidade, recorrencia_id)
+                    values (%s, %s, %s, %s, %s, %s, %s, %s)
+                    returning id
+                    """,
+                    (
+                        body["titulo"], body.get("descricao"), body.get("local"), g.user_id,
+                        datetime.combine(dia, hora_inicio),
+                        datetime.combine(dia, hora_fim),
+                        body.get("capacidade"), recorrencia_id,
+                    ),
+                )
+                evento_id = cur.fetchone()["id"]
+                for aluno_id in alunos:
                     cur.execute(
                         """
-                        insert into eventos
-                            (titulo, descricao, local, criador_id, data_inicio, data_fim,
-                             capacidade, recorrencia_id)
-                        values (%s, %s, %s, %s, %s, %s, %s, %s)
-                        returning id
+                        insert into evento_participantes (evento_id, usuario_id, origem, turma_id)
+                        values (%s, %s, 'turma', %s)
+                        on conflict (evento_id, usuario_id) do nothing
                         """,
-                        (
-                            body["titulo"], body.get("descricao"), body.get("local"), g.user_id,
-                            datetime.combine(dia, hora_inicio),
-                            datetime.combine(dia, hora_fim),
-                            body.get("capacidade"), recorrencia_id,
-                        ),
+                        (evento_id, aluno_id, turma_id),
                     )
-                    evento_id = cur.fetchone()["id"]
-                    for aluno_id in alunos:
-                        cur.execute(
-                            """
-                            insert into evento_participantes (evento_id, usuario_id, origem, turma_id)
-                            values (%s, %s, 'turma', %s)
-                            on conflict (evento_id, usuario_id) do nothing
-                            """,
-                            (evento_id, aluno_id, turma_id),
-                        )
-                    total_eventos += 1
-                dia += timedelta(days=1)
+                total_eventos += 1
         conn.commit()
     finally:
         put_conn(conn)

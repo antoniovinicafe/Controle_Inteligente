@@ -1,0 +1,36 @@
+# Serviço do totem da porta. Existia só dentro do cartão SD da Raspberry —
+# se ele corromper, esta é a configuração que faz o totem subir sozinho no
+# boot e reiniciar se travar. Versionado em 12/08/2026.
+#
+# Instalar:
+#   mkdir -p ~/.config/systemd/user
+#   cp totem.service ~/.config/systemd/user/
+#   cp fetin.env.example ~/.config/fetin.env    # e ajuste FETIN_SALA
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now totem
+#   sudo loginctl enable-linger controle        # sobe sem ninguém logar
+#
+# Serviço de usuário (não do sistema) porque precisa da sessão gráfica
+# Wayland pra abrir a tela cheia.
+
+[Unit]
+Description=Totem de acesso facial (Fetin)
+After=graphical-session.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/fetin.env
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WAYLAND_DISPLAY=wayland-0
+
+# Sem --api de propósito: o endereço do servidor é descoberto por
+# descobrir_api.py (FETIN_API -> ~/.fetin/api -> varredura da rede). Passar
+# --api aqui faria o IP voltar a ser fixo, que é o que deixou a porta fora
+# do ar quando o DHCP renovou.
+ExecStart=/usr/bin/python3 %h/fetin/totem.py --sala ${FETIN_SALA}
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
