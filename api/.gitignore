@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# NUNCA versionar - segredos de verdade
+# ---------------------------------------------------------------------------
+# O .env tem DATABASE_URL (com a senha do Postgres) e SUPABASE_JWT_SECRET.
+# Diferente da chave publishable do app Flutter, estes NÃO são seguros
+# expostos: dão acesso direto ao banco, por fora de qualquer regra do Flask.
+# Se um dia vazarem, o certo é rotacionar no painel do Supabase, não só
+# apagar o commit - o histórico do git guarda o que já subiu.
+.env
+.env.local
+*.env
+!.env.example
+
+# Credenciais de dispositivo (leitor da porta)
+device_key*
+*.pem
+*.key
+
+# ---------------------------------------------------------------------------
+# Pesado e regenerável
+# ---------------------------------------------------------------------------
+# 2 GB - reconstruído com:
+#   python -m venv venv && venv\Scripts\pip install -r requirements.txt
+venv/
+.venv/
+env/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Modelos que o DeepFace baixa sozinho na primeira execução
+.deepface/
+*.h5
+*.onnx
+
+# ---------------------------------------------------------------------------
+# Sistema e editor
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Fotos de teste que possam sobrar de depuração da câmera. Rosto de pessoa
+# real não entra em repositório.
+*.jpg
+*.jpeg
+*.png
+!docs/**/*.png
+
+# ---------------------------------------------------------------------------
+# O que DEVE ser versionado (não ignorar):
+#   .env.example       nomes das variáveis, sem valores
+#   schema.sql         estrutura do banco, incluindo o comentário sobre o
+#                      índice ivfflat que foi removido de propósito
+#   requirements.txt   versões das dependências
+#   raspberry/         código do leitor da porta
+# ---------------------------------------------------------------------------

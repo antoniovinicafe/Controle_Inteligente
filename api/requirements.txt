@@ -1,0 +1,11 @@
+Flask==3.0.3
+flask-cors==4.0.1
+waitress==3.0.2   # servidor de verdade; o embutido do Flask caía sozinho com o reloader
+psycopg2-binary==2.9.12
+python-dotenv==1.0.1
+PyJWT==2.9.0
+cryptography>=42.0.0  # necessário pro PyJWT validar tokens ES256 (JWKS) do Supabase
+pgvector==0.3.6
+deepface==0.0.93
+numpy==1.26.4
+tf-keras

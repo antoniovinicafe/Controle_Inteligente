@@ -1,75 +1,77 @@
-# Fetin — Controle de Acesso Inteligente (app)
+# Fetin — Controle de Acesso Inteligente
 
-App Flutter do projeto Fetin (Inatel): controle de acesso com reconhecimento
-facial, turmas, eventos e liberação de presença. Este repositório é só o
-**app mobile** — o backend fica em [`inatel_access_api`](../../Users/anton/OneDrive/Desktop/Fetins/Controle/inatel_access_api) (pasta separada, não versionada junto).
+Trabalho de conclusão de curso, Inatel. O sistema registra presença em aula
+por reconhecimento facial: a pessoa chega na porta, a câmera reconhece, e a
+entrada é gravada sozinha — sem lista de chamada, sem crachá.
 
-## Stack
-
-- Flutter 3.x / Dart, Material 3
-- [`supabase_flutter`](https://pub.dev/packages/supabase_flutter) — login/sessão/JWT (o app nunca fala com senha diretamente com o backend)
-- [`provider`](https://pub.dev/packages/provider) — estado de autenticação (`AuthProvider`)
-- `camera` + `image_picker` — captura de foto pro cadastro facial
-- `http` — chamadas REST pra API Flask
-
-## Rodando localmente
-
-1. `flutter pub get`
-2. Preencha [`lib/config/app_config.dart`](lib/config/app_config.dart) com a URL/anon key do seu projeto Supabase e o endereço da API Flask:
-   - Emulador Android: `http://10.0.2.2:5000/api` (não `localhost` — o emulador não enxerga a máquina host por esse nome)
-   - Celular físico na mesma rede: IP da máquina, ex. `http://192.168.x.x:5000/api`
-3. Suba a API Flask (veja o README dela) — sem ela no ar, login funciona (é direto com o Supabase) mas todo o resto trava.
-4. `flutter run`
-
-## Arquitetura (resumo)
-
-Login e sessão são 100% Supabase Auth. A API Flask nunca vê senha — só valida
-o JWT (assinado com **ES256**, via JWKS do projeto Supabase) e serve os dados
-de negócio. Ver a pasta `lib/` abaixo pro detalhe de cada camada.
+São três partes que conversam entre si, e este repositório tem as três.
 
 ```
-lib/
-  config/     app_config.dart          → URL do Supabase + da API
-  models/     perfil, turma, evento, participante, access_log
-  services/   api_client.dart          → wrapper HTTP fino, injeta Bearer token
-              auth_provider.dart       → ChangeNotifier: estado de sessão
-              turmas_service, eventos_service, usuarios_service
-  screens/    login → completar_cadastro → home (abas por papel) → turmas/eventos/rosto
-  widgets/    lista_async.dart         → loading/erro/vazio/pull-to-refresh genérico
+┌─────────────┐        ┌─────────────┐        ┌─────────────┐
+│  Raspberry  │  foto  │    Flask    │  SQL   │  Supabase   │
+│   na porta  │ ─────► │   (no PC)   │ ─────► │  Postgres   │
+│   + câmera  │ ◄───── │   DeepFace  │ ◄───── │  + pgvector │
+└─────────────┘ libera └─────────────┘        └─────────────┘
+                              ▲
+                              │ HTTP + JWT
+                       ┌─────────────┐
+                       │   Flutter   │
+                       │  (celular)  │
+                       └─────────────┘
 ```
 
-`AuthProvider` decide qual tela mostrar (`_AuthGate` em `main.dart`) reagindo
-ao estado do Supabase automaticamente — não precisa navegar manualmente
-entre login/cadastro/home.
+## As três partes
 
-## Papéis de usuário
+| Pasta | O que é |
+|---|---|
+| [`app/`](app/) | Aplicativo Flutter. Professor cria turmas e aulas e acompanha quem entrou; aluno vê suas aulas e sua presença. |
+| [`api/`](api/) | Servidor Flask. Valida o token, calcula o vetor do rosto e decide se libera. É onde mora toda a regra de negócio. |
+| [`api/raspberry/`](api/raspberry/) | Código que roda na Raspberry Pi da porta: captura da câmera e a tela do totem (LIBERADO / NEGADO). |
 
-`profiles.role` é `aluno`, `professor` ou `admin`. A `HomeScreen` monta as
-abas de acordo (`Turmas` só aparece pra professor/admin). **Hoje o papel é
-auto-selecionado pelo próprio usuário** na tela de completar cadastro — não
-tem verificação/aprovação. É uma decisão consciente pra essa fase do
-projeto (ver seção "Próximos passos" abaixo se isso mudar).
+## Como a decisão de liberar é tomada
 
-## Estado atual
+Quando um rosto chega, o Flask checa quatro coisas em ordem. Basta uma
+falhar para negar:
 
-**Pronto e testado:**
-- Login/cadastro/sessão (Supabase Auth)
-- Cadastro de rosto (auto-cadastro, 1 rosto por pessoa)
-- Turmas: criar, listar, adicionar/remover aluno
-- Eventos: criar (com seletor de data/hora), listar, detalhe (participantes +
-  logs), convidar por aluno ou turma inteira, liberação manual de presença
+1. **Rosto** — a foto tem um rosto reconhecível?
+2. **Identidade** — o vetor bate com alguém cadastrado? (distância de
+   cosseno abaixo de 0,30)
+3. **Aula** — existe uma aula acontecendo agora naquele lugar?
+4. **Lista** — essa pessoa foi convidada para essa aula?
 
-**Não implementado ainda:**
-- Reconhecimento facial em tempo real (a Raspberry Pi ainda não existe/integra)
-- Atualização ao vivo da presença na tela do professor (hoje é pull-to-refresh manual — ver sugestão de usar Supabase Realtime)
-- Edição de evento além de status/cancelamento
-- Indicador de "aluno sem rosto cadastrado" na lista de participantes
+O reconhecimento usa **Facenet512**: a foto vira um vetor de 512 números e
+a comparação é uma distância entre vetores, não uma comparação de imagens.
+A imagem em si nunca é gravada — nem no servidor, nem no leitor da porta.
 
-## Gotchas de ambiente (Windows)
+## Rodando
 
-Ver `.claude/` deste projeto ou perguntar ao Claude — tem memória detalhada
-de fixes de Python 3.12/TensorFlow, JDK 21 pro Gradle, NDK, OneDrive
-travando build, etc. Resumo rápido:
-- Java: use Eclipse Adoptium JDK 21 (`flutter config --jdk-dir`), não o JDK do Android Studio
-- Projeto fora de pastas sincronizadas por OneDrive (causa lock de arquivo durante build)
-- Caminho curto (`C:\Projetos\...`) pra evitar erro de path longo do Windows
+**API** (precisa de Python 3.12 e de um `.env` — copie de `api/.env.example`):
+
+```bash
+cd api && python -m venv venv && venv/Scripts/pip install -r requirements.txt && venv/Scripts/python app.py
+```
+
+**App** (precisa do Flutter):
+
+```bash
+cd app && flutter pub get && flutter run
+```
+
+O endereço do servidor é editável dentro do app, em **Ajustes → Servidor** —
+não precisa recompilar quando o IP da máquina muda.
+
+## Segurança
+
+- `app/lib/config/app_config.dart` contém a chave **publishable** do Supabase.
+  Ela pode ficar em repositório público **porque as tabelas têm Row Level
+  Security ligado sem nenhuma policy** — ou seja, a Data API nega tudo, e
+  todo acesso passa obrigatoriamente pelo Flask.
+- `api/.env` **nunca** entra no repositório. Tem a senha do Postgres e o
+  segredo de JWT, que dão acesso direto ao banco por fora do Flask.
+- Login exige internet: a autenticação é no Supabase (nuvem). O
+  reconhecimento e a presença funcionam na rede local, mas entrar no app não.
+
+## Estado
+
+App e API funcionando ponta a ponta, validados com duas pessoas distintas.
+O que falta está anotado em [`app/HANDOFF.md`](app/HANDOFF.md).
