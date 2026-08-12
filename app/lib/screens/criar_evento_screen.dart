@@ -172,9 +172,16 @@ class _CriarEventoScreenState extends State<CriarEventoScreen> {
             TextFormField(
               controller: _localCtrl,
               textCapitalization: TextCapitalization.words,
+              // NÃO chamar de "(opcional)". O backend aceita nulo, mas o leitor
+              // da porta procura a aula PELO local - sem ele nenhuma aula é
+              // encontrada e a porta nega todo mundo, sem dizer por quê. Já
+              // aconteceu num teste real: aula criada sem local, e o veredito
+              // foi "nenhuma aula acontecendo aqui".
               decoration: const InputDecoration(
-                labelText: 'Local (opcional)',
-                hintText: 'Sala, laboratório, bloco',
+                labelText: 'Local',
+                hintText: 'Quadra, laboratório, sala 201',
+                helperText: 'A porta só libera em aulas com local preenchido',
+                helperMaxLines: 2,
               ),
             ),
             const _Secao('QUANDO'),

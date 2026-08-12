@@ -167,9 +167,12 @@ class _CriarRecorrenciaScreenState extends State<CriarRecorrenciaScreen> {
             TextFormField(
               controller: _localCtrl,
               textCapitalization: TextCapitalization.words,
+              // Ver criar_evento_screen: sem local a porta não acha a aula.
               decoration: const InputDecoration(
-                labelText: 'Local (opcional)',
-                hintText: 'Sala, laboratório, bloco',
+                labelText: 'Local',
+                hintText: 'Quadra, laboratório, sala 201',
+                helperText: 'A porta só libera em aulas com local preenchido',
+                helperMaxLines: 2,
               ),
             ),
             const _Secao('EM QUAIS DIAS'),
