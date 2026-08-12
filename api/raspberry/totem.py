@@ -44,6 +44,8 @@ import pygame
 import requests
 from PIL import Image
 
+import descobrir_api
+
 ARQUIVO_CHAVE = Path.home() / ".fetin_chave"
 
 # ------------------------------------------------------------
@@ -364,13 +366,26 @@ def carregar_chave(informada):
 
 def main():
     p = argparse.ArgumentParser(description="Totem de acesso facial")
-    p.add_argument("--api", required=True, help="ex: http://192.168.66.57:5000/api")
+    # Sem --api o endereço é descoberto sozinho (FETIN_API, ~/.fetin/api, ou
+    # varredura da rede). Passar --api continua vencendo tudo.
+    p.add_argument("--api", help="ex: http://192.168.66.57:5000/api (opcional)")
     p.add_argument("--chave")
     p.add_argument("--sala", default="QUADRA", help="nome exibido na tela")
     p.add_argument("--janela", action="store_true", help="não abre em tela cheia (teste)")
     args = p.parse_args()
 
     chave = carregar_chave(args.chave)
+
+    # Antes de abrir a câmera e a tela cheia: sem servidor o totem não tem o
+    # que fazer, e a mensagem de erro precisa aparecer num terminal legível e
+    # não atrás de uma janela fullscreen.
+    api = descobrir_api.resolver(args.api)
+    if not api:
+        sys.exit(
+            "Não achei o servidor Fetin.\n"
+            "  Passe --api http://IP:5000/api, ou defina FETIN_API,\n"
+            "  ou escreva o endereço em ~/.fetin/api"
+        )
 
     from picamera2 import Picamera2
 
@@ -382,7 +397,7 @@ def main():
 
     tela = Tela(args.sala, tela_cheia=not args.janela)
 
-    rede = Reconhecedor(args.api, chave)
+    rede = Reconhecedor(api, chave)
     rede.start()
 
     estado = "parado"           # parado | verificando | resultado

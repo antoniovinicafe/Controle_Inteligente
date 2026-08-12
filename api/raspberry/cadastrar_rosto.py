@@ -24,6 +24,8 @@ import sys
 
 import requests
 
+import descobrir_api
+
 SUPABASE_URL = "https://udslgrllcgsmlwktuweb.supabase.co"
 SUPABASE_ANON = "sb_publishable_5WE15j_FkEOaTGNOff-SNw_VfElDcsG"
 
@@ -63,7 +65,9 @@ def capturar() -> bytes:
 
 def main():
     p = argparse.ArgumentParser(description="Cadastra seu rosto pela câmera do Pi")
-    p.add_argument("--api", required=True, help="ex: http://192.168.66.57:5000/api")
+    # Opcional: sem ele o endereço é descoberto sozinho (FETIN_API,
+    # ~/.fetin/api, ou varredura da rede).
+    p.add_argument("--api", help="ex: http://192.168.66.57:5000/api (opcional)")
     p.add_argument("--email", help="se omitir, use --token")
     p.add_argument("--senha", help="se omitir, pergunta sem exibir na tela")
     p.add_argument(
@@ -73,6 +77,14 @@ def main():
         "histórico do shell do Pi.",
     )
     args = p.parse_args()
+
+    api = descobrir_api.resolver(args.api)
+    if not api:
+        sys.exit(
+            "Não achei o servidor Fetin.\n"
+            "  Passe --api http://IP:5000/api, ou defina FETIN_API,\n"
+            "  ou escreva o endereço em ~/.fetin/api"
+        )
 
     if args.token:
         token = args.token
@@ -87,7 +99,7 @@ def main():
     print(f"Foto capturada ({len(imagem) // 1024} KB). Enviando...")
 
     r = requests.post(
-        f"{args.api}/faces",
+        f"{api}/faces",
         headers={"Authorization": f"Bearer {token}"},
         files={"foto": ("rosto.jpg", imagem, "image/jpeg")},
         timeout=120,  # primeira chamada carrega o Facenet512 no servidor

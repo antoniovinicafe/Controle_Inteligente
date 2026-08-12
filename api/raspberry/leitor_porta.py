@@ -29,6 +29,8 @@ from pathlib import Path
 
 import requests
 
+import descobrir_api
+
 ARQUIVO_CHAVE = Path.home() / ".fetin_chave"
 
 # Quanto tempo esperar entre uma captura e outra. Sem isso o Pi
@@ -171,7 +173,9 @@ def carregar_chave(informada: str | None) -> str:
 
 def main():
     p = argparse.ArgumentParser(description="Leitor facial da porta (Raspberry Pi)")
-    p.add_argument("--api", required=True, help="ex: http://192.168.66.57:5000/api")
+    # Sem --api o endereço é descoberto sozinho (FETIN_API, ~/.fetin/api, ou
+    # varredura da rede). Passar --api continua vencendo tudo.
+    p.add_argument("--api", help="ex: http://192.168.66.57:5000/api (opcional)")
     p.add_argument("--chave", help="X-Device-Key (ou use ~/.fetin_chave)")
     p.add_argument("--camera", choices=["csi", "usb"], default="csi")
     p.add_argument("--uma-vez", action="store_true", help="captura só uma vez e sai")
@@ -179,13 +183,21 @@ def main():
 
     chave = carregar_chave(args.chave)
 
+    api = descobrir_api.resolver(args.api)
+    if not api:
+        sys.exit(
+            "Não achei o servidor Fetin.\n"
+            "  Passe --api http://IP:5000/api, ou defina FETIN_API,\n"
+            "  ou escreva o endereço em ~/.fetin/api"
+        )
+
     # Falha cedo e com mensagem clara se o servidor não estiver acessível -
     # é de longe o erro mais comum (IP mudou, firewall, wi-fi diferente).
     try:
-        requests.get(f"{args.api}/health", timeout=5).raise_for_status()
+        requests.get(f"{api}/health", timeout=5).raise_for_status()
     except Exception as e:
-        sys.exit(f"Não consegui falar com o servidor em {args.api}\n  {e}")
-    print(f"Servidor OK em {args.api}")
+        sys.exit(f"Não consegui falar com o servidor em {api}\n  {e}")
+    print(f"Servidor OK em {api}")
 
     camera = abrir_camera(args.camera)
     leds = Sinalizador()
@@ -195,7 +207,7 @@ def main():
         while True:
             try:
                 imagem = camera.capturar()
-                r = reconhecer(args.api, chave, imagem)
+                r = reconhecer(api, chave, imagem)
             except requests.RequestException as e:
                 # Rede caiu / servidor reiniciou: não é motivo pra derrubar
                 # o leitor da porta. Avisa e tenta de novo no próximo laço.
