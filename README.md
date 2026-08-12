@@ -1,8 +1,8 @@
 # Fetin — Controle de Acesso Inteligente
 
-Trabalho de conclusão de curso, Inatel. O sistema registra presença em aula
-por reconhecimento facial: a pessoa chega na porta, a câmera reconhece, e a
-entrada é gravada sozinha — sem lista de chamada, sem crachá.
+Projeto desenvolvido para a FETIN, no Inatel. O sistema registra presença em
+aula por reconhecimento facial: a pessoa chega na porta, a câmera reconhece,
+e a entrada é gravada sozinha — sem lista de chamada, sem crachá.
 
 São três partes que conversam entre si, e este repositório tem as três.
 
