@@ -32,17 +32,27 @@ def cadastrar_rosto():
     conn = get_conn()
     try:
         with conn.cursor() as cur:
+            # Cada foto ACRESCENTA em vez de substituir: mais capturas da
+            # mesma pessoa (luz, ângulo, óculos) cobrem a variação real e a
+            # busca compara contra a melhor delas.
+            cur.execute("select count(*) as n from faces where usuario_id = %s", (g.user_id,))
+            ja_tem = cur.fetchone()["n"]
+            if ja_tem >= MAX_FOTOS_POR_PESSOA:
+                return jsonify({
+                    "erro": f"Você já tem {ja_tem} fotos cadastradas, que é o "
+                            "máximo. Remova as atuais pra cadastrar de novo."
+                }), 409
+
             cur.execute(
                 """
                 insert into faces (usuario_id, embedding, modelo)
                 values (%s, %s, %s)
-                on conflict (usuario_id)
-                do update set embedding = excluded.embedding, modelo = excluded.modelo, atualizado_em = now()
                 returning usuario_id, modelo, atualizado_em
                 """,
                 (g.user_id, embedding, MODELO),
             )
             resultado = cur.fetchone()
+            resultado["total_fotos"] = ja_tem + 1
         conn.commit()
     finally:
         put_conn(conn)
@@ -58,14 +68,29 @@ def status_cadastro():
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "select usuario_id, modelo, atualizado_em from faces where usuario_id = %s",
+                """
+                select count(*) as total, max(atualizado_em) as atualizado_em,
+                       max(modelo) as modelo
+                from faces where usuario_id = %s
+                """,
                 (g.user_id,),
             )
-            face = cur.fetchone()
+            r = cur.fetchone()
     finally:
         put_conn(conn)
 
-    return jsonify({"cadastrado": face is not None, "detalhe": face})
+    total = r["total"]
+    return jsonify({
+        "cadastrado": total > 0,
+        "total": total,
+        "maximo": MAX_FOTOS_POR_PESSOA,
+        # `detalhe` mantém o formato antigo pra não quebrar app já instalado.
+        "detalhe": None if total == 0 else {
+            "usuario_id": g.user_id,
+            "modelo": r["modelo"],
+            "atualizado_em": r["atualizado_em"],
+        },
+    })
 
 
 @bp.route("", methods=["DELETE"])
@@ -92,6 +117,11 @@ def remover_rosto():
 # mais parecidos (mais falso positivo = deixa entrar quem não devia);
 # baixar exige mais semelhança (mais falso negativo = barra quem devia).
 LIMIAR_DISTANCIA = 0.30
+
+# Teto de capturas por pessoa. Não é limitação técnica - é pra a tabela não
+# crescer sem controle e pra a varredura exata (sem índice, ver schema.sql)
+# continuar rápida: o custo do reconhecimento é linear no total de linhas.
+MAX_FOTOS_POR_PESSOA = 5
 
 
 def _registrar(cur, evento_id, usuario_id, liberado, motivo):

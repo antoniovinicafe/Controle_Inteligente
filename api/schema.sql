@@ -30,13 +30,19 @@ create table profiles (
 -- se precisar de múltiplas fotos por pessoa no futuro, é só
 -- tirar o UNIQUE e tratar "match" contra todas).
 -- ------------------------------------------------------------
+-- VÁRIAS linhas por pessoa, de propósito (não tem unique em usuario_id).
+-- Cada linha é uma captura em condição diferente - luz, ângulo, óculos. O
+-- reconhecimento faz `order by embedding <=> alvo limit 1`, então compara
+-- contra a melhor captura daquela pessoa sem lógica extra.
+-- Ver migracao_multiplos_rostos.sql.
 create table faces (
     id            bigint generated always as identity primary key,
-    usuario_id    uuid not null unique references profiles(id) on delete cascade,
+    usuario_id    uuid not null references profiles(id) on delete cascade,
     embedding     vector(512) not null,   -- dimensão do modelo Facenet512 (DeepFace)
     modelo        varchar(50) not null default 'Facenet512',
     atualizado_em timestamptz not null default now()
 );
+create index if not exists idx_faces_usuario on faces (usuario_id);
 
 -- ------------------------------------------------------------
 -- TURMAS

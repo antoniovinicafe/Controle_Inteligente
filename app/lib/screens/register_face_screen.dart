@@ -33,6 +33,7 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
 
   // ── Estado ────────────────────────────────────────────────────
   bool _cadastrado = false;
+  int _totalFotos = 0;
   String? _atualizadoEm;
   bool _statusLoading = true;
 
@@ -63,6 +64,7 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
       final detalhe = json['detalhe'] as Map<String, dynamic>?;
       setState(() {
         _cadastrado = json['cadastrado'] == true;
+        _totalFotos = (json['total'] as num?)?.toInt() ?? (_cadastrado ? 1 : 0);
         _atualizadoEm = detalhe?['atualizado_em']?.toString();
       });
     } catch (_) {
@@ -264,7 +266,10 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
               _Recado(
                 cor: CoresStatus.ok(context),
                 rotulo: 'CADASTRADO',
-                texto: 'A porta já reconhece você.',
+                texto: _totalFotos > 1
+                    ? 'Agora são $_totalFotos fotos. Quanto mais variação de '
+                        'luz e ângulo, melhor o reconhecimento.'
+                    : 'A porta já reconhece você.',
               ),
             ],
             if (!_statusLoading) ...[
@@ -370,7 +375,11 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _cadastrado ? 'Rosto cadastrado' : 'Nenhum rosto cadastrado',
+                    !_cadastrado
+                        ? 'Nenhum rosto cadastrado'
+                        : _totalFotos == 1
+                            ? '1 foto cadastrada'
+                            : '$_totalFotos fotos cadastradas',
                     style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500),
                   ),
                   if (quando != null) ...[

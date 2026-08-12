@@ -35,6 +35,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // mas a aba Rosto mostra o "não verificado" com todas as letras.
   bool? _temRosto;
 
+  /// Quantas fotos a pessoa tem. Null quando não deu pra perguntar.
+  ContagemRostos? _rostos;
+
   @override
   void initState() {
     super.initState();
@@ -42,8 +45,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _conferirRosto() async {
-    final status = await FacesService.status();
-    if (mounted) setState(() => _temRosto = status);
+    final c = await FacesService.contagem();
+    if (mounted) {
+      setState(() {
+        _rostos = c;
+        _temRosto = c?.temAlguma;
+      });
+    }
   }
 
   Future<void> _abrirCadastroRosto() async {
@@ -70,6 +78,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final rosto = _RostoTab(
       temRosto: _temRosto,
+      rostos: _rostos,
       onCadastrar: _abrirCadastroRosto,
       onVerificar: _conferirRosto,
     );
@@ -201,11 +210,13 @@ class _AvisoRosto extends StatelessWidget {
 class _RostoTab extends StatelessWidget {
   /// null = não deu pra verificar.
   final bool? temRosto;
+  final ContagemRostos? rostos;
   final VoidCallback onCadastrar;
   final VoidCallback onVerificar;
 
   const _RostoTab({
     required this.temRosto,
+    required this.rostos,
     required this.onCadastrar,
     required this.onVerificar,
   });
@@ -215,12 +226,22 @@ class _RostoTab extends StatelessWidget {
     final cores = Theme.of(context).colorScheme;
 
     final (cor, rotulo, titulo, explicacao) = switch (temRosto) {
+      // Com uma foto só o reconhecimento depende de a luz e o ângulo do dia
+      // baterem com os do cadastro - e a quadra tem luz de LED verde que já
+      // se mostrou problemática. Por isso a tela pede mais capturas em vez de
+      // só dizer "pronto": é a diferença entre funcionar e funcionar sempre.
       true => (
           CoresStatus.ok(context),
-          'CADASTRADO',
+          rostos != null && rostos!.total > 1
+              ? 'CADASTRADO · ${rostos!.total} FOTOS'
+              : 'CADASTRADO',
           'A porta reconhece você',
-          'Chegue na frente da câmera durante uma aula sua e a entrada é '
-              'registrada sozinha.',
+          rostos != null && rostos!.podeAdicionar && rostos!.total < 3
+              ? 'Chegue na frente da câmera durante uma aula sua e a entrada é '
+                  'registrada sozinha. Adicionar mais fotos — de óculos, com '
+                  'outra luz — melhora o reconhecimento em condições difíceis.'
+              : 'Chegue na frente da câmera durante uma aula sua e a entrada é '
+                  'registrada sozinha.',
         ),
       false => (
           CoresStatus.alerta(context),
@@ -297,9 +318,14 @@ class _RostoTab extends StatelessWidget {
                       )
                     else
                       OutlinedButton.icon(
-                        onPressed: onCadastrar,
-                        icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                        label: const Text('Atualizar minha foto'),
+                        onPressed:
+                            rostos == null || rostos!.podeAdicionar ? onCadastrar : null,
+                        icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+                        label: Text(
+                          rostos != null && !rostos!.podeAdicionar
+                              ? 'Máximo de ${rostos!.maximo} fotos atingido'
+                              : 'Adicionar outra foto',
+                        ),
                       ),
                     const Spacer(),
                     // Um sistema que guarda o rosto das pessoas deve dizer o que
