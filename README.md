@@ -12,6 +12,7 @@ São três partes que conversam entre si, e este repositório tem as três.
 │   na porta  │ ─────► │   (no PC)   │ ─────► │  Postgres   │
 │   + câmera  │ ◄───── │   DeepFace  │ ◄───── │  + pgvector │
 └─────────────┘ libera └─────────────┘        └─────────────┘
+        └──── rede local ─────┘         └──── internet ────┘
                               ▲
                               │ HTTP + JWT
                        ┌─────────────┐
@@ -19,6 +20,10 @@ São três partes que conversam entre si, e este repositório tem as três.
                        │  (celular)  │
                        └─────────────┘
 ```
+
+Repare no lado direito: o banco fica na AWS, então toda decisão da porta
+sai do prédio. É a limitação principal do sistema hoje — ver
+**O que falta**.
 
 ## As três partes
 
@@ -30,18 +35,41 @@ São três partes que conversam entre si, e este repositório tem as três.
 
 ## Como a decisão de liberar é tomada
 
-Quando um rosto chega, o Flask checa quatro coisas em ordem. Basta uma
+Quando um rosto chega, o Flask checa cinco coisas em ordem. Basta uma
 falhar para negar:
 
 1. **Rosto** — a foto tem um rosto reconhecível?
-2. **Identidade** — o vetor bate com alguém cadastrado? (distância de
+2. **Vivacidade** — é gente ali na frente, ou uma foto impressa e uma tela
+   erguida diante da câmera?
+3. **Identidade** — o vetor bate com alguém cadastrado? (distância de
    cosseno abaixo de 0,30)
-3. **Aula** — existe uma aula acontecendo agora naquele lugar?
-4. **Lista** — essa pessoa foi convidada para essa aula?
+4. **Aula** — existe uma aula acontecendo agora naquele lugar?
+5. **Lista** — essa pessoa foi convidada para essa aula?
 
 O reconhecimento usa **Facenet512**: a foto vira um vetor de 512 números e
 a comparação é uma distância entre vetores, não uma comparação de imagens.
 A imagem em si nunca é gravada — nem no servidor, nem no leitor da porta.
+
+## O que impede a burla
+
+O jeito óbvio de enganar uma porta que olha rostos é mostrar o rosto de
+outra pessoa. Dá pra tentar de dois lados, e cada um é barrado no seu:
+
+**Na porta**, o passo de vivacidade. O anti-spoofing (MiniFASNet) olha
+textura e reflexo pra separar pele de papel e de LCD — levantar o celular
+com a foto de alguém cadastrado não abre.
+
+**No cadastro**, duas regras. A foto tem que ser tirada na hora, sem opção
+de galeria: o anti-spoofing reconhece foto de tela, mas não distingue uma
+selfie digital normal de outra pessoa, então qualquer imagem salva no
+celular serviria. E um rosto pertence a uma conta só — se já está
+cadastrado em outra, o servidor recusa. Sem isso dava pra registrar o
+rosto de um colega e receber a presença dele, uma fraude que não é barrada
+por ninguém e não aparece no log: só o nome vem trocado.
+
+Cada pessoa pode guardar até 5 capturas (luz, ângulo, óculos). A busca
+compara contra a mais próxima delas, o que cobre a variação real sem
+afrouxar o limiar — capturas a mais não aproximam um estranho.
 
 ## Rodando
 
@@ -68,21 +96,34 @@ não precisa recompilar quando o IP da máquina muda.
   todo acesso passa obrigatoriamente pelo Flask.
 - `api/.env` **nunca** entra no repositório. Tem a senha do Postgres e o
   segredo de JWT, que dão acesso direto ao banco por fora do Flask.
-- Login exige internet: a autenticação é no Supabase (nuvem). O
-  reconhecimento e a presença funcionam na rede local, mas entrar no app não.
+- **Tudo exige internet** — ver "O que falta" abaixo.
 
 ## Estado
 
 Funcionando ponta a ponta, validado em 12/08/2026 com o ciclo completo:
 rosto cadastrado pela câmera do aplicativo num celular físico, pessoa
-reconhecida na porta pela Raspberry, presença gravada. As quatro checagens
-foram observadas acertando, inclusive a mais sutil — alguém **reconhecido**
-e ainda assim negado por não estar na lista daquela aula.
+reconhecida na porta pela Raspberry, presença gravada. Naquele dia as
+checagens de rosto, identidade, aula e lista foram observadas acertando —
+inclusive a mais sutil, alguém **reconhecido** e ainda assim negado por
+não estar na lista daquela aula.
 
 O que falta:
 
-- **Login exige internet.** A autenticação é no Supabase (nuvem). Sem rede
-  no local, ninguém entra no app — nem o professor. Reconhecimento e
-  presença funcionam na rede local, entrar não.
+- **A vivacidade nunca foi testada na porta.** O anti-spoofing entrou
+  depois daquela validação: passa nos testes do servidor, mas ninguém
+  ainda ergueu uma foto na frente da câmera da Raspberry. Enquanto isso
+  não for feito, é código que funciona em teoria.
+
+- **Sem internet, nada funciona.** O desenho parece local — a Raspberry
+  fala com o Flask no PC, os dois na mesma rede — mas o Flask guarda tudo
+  no Postgres do Supabase, que fica na AWS em São Paulo. Toda decisão da
+  porta é uma consulta que atravessa a internet, e o login é no Supabase
+  Auth. Cair a rede do prédio derruba o sistema inteiro, não só o app.
+  A saída é a Pi manter uma cópia local dos rostos e dos convites do dia e
+  sincronizar quando a rede volta; é o item grande ainda não começado.
 - Layout do totem é fixo em 1080p; o mini monitor de 7" tem outra resolução
   (marcado com `ponytail:` em `api/raspberry/totem.py`).
+- Não existe medição da distância **entre capturas da mesma pessoa** — a
+  metade que diz quando o sistema barra quem tem direito. Falta alguém
+  cadastrar uma segunda foto. Entre pessoas diferentes, o par mais próximo
+  hoje está a 0,796, contra um limiar de 0,30.

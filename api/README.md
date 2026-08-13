@@ -1,16 +1,18 @@
 # Fetin — API (backend Flask)
 
 API do projeto Fetin (Inatel): controle de acesso com reconhecimento facial,
-turmas, eventos e presença. O app mobile fica em outro repositório
-(`AppFlutter`, `C:\Projetos\AppFlutter`).
+turmas, eventos e presença. O app Flutter e o código da Raspberry estão no
+mesmo repositório, em [`../app/`](../app/) e em [`raspberry/`](raspberry/) —
+o [README da raiz](../README.md) explica como as três partes se encaixam.
 
 ## Stack
 
-- Flask 3 + `flask-cors`
+- Flask 3 + `flask-cors`, servido por `waitress`
 - Postgres (Supabase) via `psycopg2`, extensão `pgvector` pros embeddings faciais
 - Supabase Auth pra login — **esta API nunca gera token nem lida com senha**,
   só valida o JWT que o Supabase emite
-- DeepFace (modelo Facenet512, vetor de 512 posições) pro cálculo do embedding facial
+- DeepFace (modelo Facenet512, vetor de 512 posições) pro cálculo do embedding
+  facial, com anti-spoofing (MiniFASNet, exige `torch`) na captura
 
 ## Autenticação
 
@@ -39,21 +41,33 @@ Python 3.14 não tem wheels compatíveis com TensorFlow/DeepFace ainda.
 (`aws-0-xxxx.pooler.supabase.com`), não pra conexão direta — a direta falha
 por IPv6 dependendo da rede.
 
-Rode `schema.sql` no SQL Editor do Supabase antes do primeiro uso.
+Rode `schema.sql` no SQL Editor do Supabase antes do primeiro uso — ele já
+vem com tudo. Os `migracao_*.sql` são só pra bancos criados antes de cada
+mudança; num banco novo não precisa rodar nenhum.
 
 ## Estrutura
 
 ```
-app.py                   → cria a app, registra blueprints, JSON provider (datas em ISO 8601)
-config.py                → lê .env
+app.py                    → cria a app, registra blueprints, JSON provider (datas em ISO 8601)
+config.py                 → lê .env
 utils/db.py               → pool de conexões psycopg2
 utils/auth_middleware.py  → valida JWT via JWKS, injeta g.user_id/g.user_role
+utils/device_auth.py      → autentica a Raspberry por X-Device-Key (não é uma pessoa logada)
+utils/curso.py            → deduz o curso do e-mail institucional (gec → Computação)
 utils/json_provider.py    → serializa datetime em ISO 8601 (Flask usa formato HTTP por padrão - quebra clients Dart/JS)
-routes/usuarios.py        → perfil, complete-cadastro, listar/promover usuários
-routes/turmas.py          → CRUD turma + gestão de alunos
+routes/usuarios.py        → perfil, complete-cadastro, listar/promover usuários, frequência própria
+routes/turmas.py          → CRUD turma + gestão de alunos + frequência da turma
 routes/eventos.py         → CRUD evento + participantes + liberação manual + logs
-routes/faces.py           → cadastro/status/remoção de rosto (reconhecimento ainda não implementado)
-services/face_service.py  → DeepFace: calcula o embedding a partir de uma foto
+routes/recorrencias.py    → "aula toda seg/qua", expandida em um evento por ocorrência
+routes/dispositivos.py    → cadastro dos leitores de porta e rotação da chave
+routes/faces.py           → cadastro/status/remoção de rosto + reconhecimento na porta
+services/face_service.py  → DeepFace: embedding + anti-spoofing a partir de uma foto
+raspberry/                → o que roda na Pi da porta (totem, captura, descoberta do servidor)
+tests/                    → pytest, sem banco: só a lógica que erra calado se quebrar
+```
+
+```bash
+venv/Scripts/python -m pytest tests/ -q
 ```
 
 ## Rotas — visão geral
@@ -70,24 +84,38 @@ por papel.
 | `GET /usuarios`, `PATCH /usuarios/<id>/role` | professor/admin (listar), admin (promover) |
 | `POST/GET /turmas`, gestão de alunos | professor/admin |
 | `POST/GET/PATCH/DELETE /eventos`, participantes, liberar manual, logs | professor/admin (dono ou admin) |
+| `POST/GET/DELETE /recorrencias` | professor/admin (dono ou admin) |
+| `POST/GET/PATCH/DELETE /dispositivos`, rotação de chave | professor/admin |
 | `POST/GET/DELETE /faces` | o próprio usuário, sobre o próprio rosto |
+| `POST /faces/recognize` | a Raspberry, por `X-Device-Key` — **não** por JWT |
 
-## Não implementado ainda
+## Decisões que não são óbvias no código
 
-- `POST /faces/recognize` — endpoint que a Raspberry Pi vai chamar. Precisa de
-  autenticação própria (chave de API por dispositivo, **não** um JWT de
-  usuário — a Pi não é uma pessoa logada) e de um jeito de saber qual evento
-  validar (proposta: tabela `dispositivos` mapeando device → sala/local).
-- Atualização em tempo real pro app: recomendado usar **Supabase Realtime**
-  (o Flutter assina mudanças em `evento_participantes` direto do Postgres)
-  em vez de abrir WebSocket no Flask.
+- **`/faces/recognize` não usa JWT.** A Pi não é uma pessoa logada: autentica
+  por chave própria no header `X-Device-Key`, e o banco guarda só o hash. É a
+  chave que diz de qual sala o leitor é, e daí sai qual aula validar.
+- **O app não usa Supabase Realtime.** A tela "Agora" relê `/eventos` de 10 em
+  10 segundos. Realtime seria mais elegante, mas exigiria abrir a Data API
+  pro cliente, e hoje o RLS nega tudo justamente pra obrigar todo acesso a
+  passar por aqui.
+- **Nada de índice `ivfflat` na tabela `faces`.** Já existiu um e fazia a porta
+  recusar gente cadastrada — o porquê está comentado no `schema.sql`.
+- **Vários rostos por pessoa** (até 5), e **um rosto pertence a uma conta só**.
+  O motivo das duas regras está no cabeçalho de `tests/test_multiplos_rostos.py`
+  e `tests/test_rosto_duplicado.py`.
 
 ## Gotchas de ambiente (Windows)
 
 - Python 3.12 obrigatório (ver acima)
 - `tf-keras` precisa estar instalado junto com TensorFlow
+- `torch` também é obrigatório, não opcional: sem ele o anti-spoofing não
+  carrega. A API responde 500 dizendo isso, de propósito — o DeepFace sinaliza
+  a falta com uma mensagem que contém a palavra "spoof", e tratá-la como
+  veredito faria a porta negar todo mundo com "isso parece uma foto".
 - PowerShell: `Set-ExecutionPolicy RemoteSigned` se scripts não rodarem
-- O servidor de debug do Flask demora alguns segundos pra reiniciar depois de
-  qualquer edição, porque `routes/faces.py` importa DeepFace/TensorFlow no
-  nível do módulo — espere o log mostrar "Debugger is active!" antes de
-  testar de novo.
+- `python app.py` sobe o waitress, sem recarregar sozinho ao salvar arquivo —
+  é preciso parar e subir de novo. Era com o servidor de debug do Flask, que
+  travava com o TensorFlow carregado e derrubava a API sozinho no meio do uso.
+  Pra voltar ao reload automático: `python app.py --dev`.
+- A primeira requisição depois de subir demora: o DeepFace baixa/carrega os
+  pesos do Facenet512 e do anti-spoofing na primeira chamada, não no import.
