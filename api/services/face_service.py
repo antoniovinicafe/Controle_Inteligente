@@ -5,10 +5,33 @@ A imagem NUNCA é salva em disco/storage - só passa pela memória o
 tempo suficiente pra extrair o vetor, que é o que vai pro banco.
 """
 
+import os
+
 import numpy as np
 from deepface import DeepFace
 
 MODELO = "Facenet512"  # gera vetor de 512 posições (bate com o schema.sql)
+
+# Quanta certeza o anti-spoofing precisa ter pra NEGAR alguém.
+#
+# O MiniFASNet devolve três probabilidades - falso impresso, pessoa real,
+# falso de tela - e o DeepFace, sozinho, recusa sempre que "real" não é a
+# maior das três. Isso é decidir no voto de minerva: basta a soma das duas
+# suspeitas passar da real, o que acontece direto com pouca luz, rosto de
+# lado ou longe demais da câmera da porta. O resultado é negar quem tem
+# direito de entrar, que é a falha cara aqui - a pessoa fica parada na
+# frente da porta sem saber o que fazer.
+#
+# Com o limiar, a recusa só vale quando o modelo está convicto. 0.75 = "só
+# nega se estiver 75% certo de que é fraude"; entre 33% e 75% a pessoa
+# passa. Ajuste em ANTISPOOF_LIMIAR no .env: mais baixo aperta (barra
+# mais), mais alto afrouxa, acima de 1.0 desliga na prática.
+#
+# ponytail: número escolhido no olho, não medido com a câmera do Pi. A
+# mensagem de recusa carrega a certeza do modelo justamente pra calibrar
+# com os números reais - erguer uma foto na frente da câmera algumas
+# vezes, ver quanto dá, e ajustar o .env com isso na mão.
+LIMIAR_FALSIDADE = float(os.environ.get("ANTISPOOF_LIMIAR", "0.75"))
 
 
 class RostoFalsoError(ValueError):
@@ -30,10 +53,13 @@ def calcular_embedding(imagem_bytes: bytes, checar_vivacidade: bool = True) -> n
     Levanta ValueError se nenhum rosto for detectado, e RostoFalsoError se o
     rosto encontrado for de foto/tela em vez de pessoa presente.
 
-    A checagem de vivacidade usa o modelo anti-spoofing que já vem no
-    DeepFace (MiniFASNet): ele olha textura e reflexo pra distinguir pele de
-    papel ou de LCD. Sem isso, levantar o celular com a foto de alguém
-    cadastrado abre a porta - que é a primeira coisa que um avaliador tenta.
+    São duas passadas de propósito, em vez de um `represent(anti_spoofing=True)`:
+    o DeepFace, nesse atalho, só sabe estourar "spoof detected" e joga fora o
+    quanto ele estava certo disso - e é esse número que decide se dá pra
+    afrouxar (ver LIMIAR_FALSIDADE). Aqui o `extract_faces` acha o rosto e
+    entrega o veredito com a certeza junto; o `represent` recebe o recorte
+    pronto (`detector_backend="skip"`), então o detector roda uma vez só,
+    igual antes.
     """
     import cv2
 
@@ -43,9 +69,8 @@ def calcular_embedding(imagem_bytes: bytes, checar_vivacidade: bool = True) -> n
         raise ValueError("Não foi possível ler a imagem enviada")
 
     try:
-        resultado = DeepFace.represent(
+        rostos = DeepFace.extract_faces(
             img_path=img,
-            model_name=MODELO,
             enforce_detection=True,  # falha se não achar rosto (evita cadastro vazio)
             anti_spoofing=checar_vivacidade,
         )
@@ -65,10 +90,11 @@ def calcular_embedding(imagem_bytes: bytes, checar_vivacidade: bool = True) -> n
                 "torch (pip install -r requirements.txt)"
             ) from e
 
-        # O DeepFace usa ValueError pros dois casos e só o texto distingue.
-        # Frágil por natureza, então o teste em tests/ prende esta tradução:
-        # se a mensagem mudar numa atualização, o teste quebra em vez de a
-        # porta passar a aceitar foto silenciosamente.
+        # Rede de segurança: hoje quem estoura "spoof detected" é o
+        # `represent`, não o `extract_faces` - mas se numa atualização o
+        # veredito subir pra cá, ele tem que continuar sendo tratado como
+        # burla. Sem isto viraria "nenhum rosto detectado", que é a etapa
+        # que o reconhecimento NÃO registra: a tentativa sumiria do log.
         if "spoof detected" in msg:
             raise RostoFalsoError(
                 "Isso parece uma foto ou uma tela, não uma pessoa"
@@ -76,10 +102,44 @@ def calcular_embedding(imagem_bytes: bytes, checar_vivacidade: bool = True) -> n
 
         raise ValueError("Nenhum rosto detectado na imagem enviada") from e
 
-    if len(resultado) > 1:
+    if len(rostos) > 1:
         raise ValueError(
             "Mais de um rosto detectado na imagem. Envie uma foto com apenas o seu rosto."
         )
+
+    rosto = rostos[0]
+
+    # `is_real` só existe quando a checagem foi pedida; ausente = não checou.
+    if "is_real" in rosto:
+        certeza = float(rosto.get("antispoof_score", 1.0))
+
+        # Toda leitura sai no console do servidor, inclusive as que passam.
+        # É a única janela pra calibrar: a recusa se conta sozinha (vai pro
+        # access_logs), mas uma foto que ENTROU, ou uma pessoa que passou
+        # raspando, não deixariam rastro nenhum. flush porque a saída do
+        # waitress pode ficar presa no buffer e nunca aparecer.
+        print(
+            f"[vivacidade] {'pessoa' if rosto['is_real'] else 'FOTO/TELA'} "
+            f"({certeza:.0%} de certeza, limiar {LIMIAR_FALSIDADE:.0%})",
+            flush=True,
+        )
+
+        if rosto["is_real"] is False and certeza >= LIMIAR_FALSIDADE:
+            # A certeza vai no texto porque é ela que se ajusta no .env, e
+            # este texto é o que aparece no terminal do leitor e no
+            # access_logs. Sem isso a calibração seria no chute.
+            raise RostoFalsoError(
+                f"Isso parece uma foto ou uma tela, não uma pessoa "
+                f"({certeza:.0%} de certeza)"
+            )
+
+    # O recorte já vem do extract_faces em RGB e normalizado em [0,1], que é
+    # exatamente o que o represent usaria internamente - por isso "skip".
+    resultado = DeepFace.represent(
+        img_path=rosto["face"],
+        model_name=MODELO,
+        detector_backend="skip",
+    )
 
     embedding = np.array(resultado[0]["embedding"], dtype=np.float32)
     return embedding
