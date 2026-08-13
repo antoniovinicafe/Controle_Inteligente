@@ -61,6 +61,7 @@ routes/eventos.py         → CRUD evento + participantes + liberação manual +
 routes/recorrencias.py    → "aula toda seg/qua", expandida em um evento por ocorrência
 routes/dispositivos.py    → cadastro dos leitores de porta e rotação da chave
 routes/faces.py           → cadastro/status/remoção de rosto + reconhecimento na porta
+medir_rostos.py           → mede as distâncias entre rostos cadastrados (calibra o limiar de 0,30)
 services/face_service.py  → DeepFace: embedding + anti-spoofing a partir de uma foto
 raspberry/                → o que roda na Pi da porta (totem, captura, descoberta do servidor)
 tests/                    → pytest, sem banco: só a lógica que erra calado se quebrar
@@ -103,6 +104,13 @@ por papel.
 - **Vários rostos por pessoa** (até 5), e **um rosto pertence a uma conta só**.
   O motivo das duas regras está no cabeçalho de `tests/test_multiplos_rostos.py`
   e `tests/test_rosto_duplicado.py`.
+- **A vivacidade não usa o veredito pronto do DeepFace.** `represent(anti_spoofing=True)`
+  nega sempre que "real" não é a maior das três probabilidades do MiniFASNet —
+  no voto de minerva — e joga fora o quanto ele estava certo disso. Como esse
+  número é o que permite afrouxar sem desligar, `face_service.py` chama
+  `extract_faces` (que devolve `is_real` + `antispoof_score`) e passa o recorte
+  pronto pro `represent` com `detector_backend="skip"`: o detector continua
+  rodando uma vez só. O limiar fica em `ANTISPOOF_LIMIAR` no `.env`.
 
 ## Gotchas de ambiente (Windows)
 

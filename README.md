@@ -59,6 +59,17 @@ outra pessoa. Dá pra tentar de dois lados, e cada um é barrado no seu:
 textura e reflexo pra separar pele de papel e de LCD — levantar o celular
 com a foto de alguém cadastrado não abre.
 
+Esse passo tem um limiar, e ele é o ponto de equilíbrio do sistema
+inteiro. O MiniFASNet devolve três probabilidades (foto impressa, pessoa
+real, tela) e o padrão do DeepFace nega sempre que "real" não é a maior —
+decisão no voto de minerva, que barra gente de verdade em luz ruim, de
+lado ou longe da câmera. Aqui a recusa só vale quando o modelo está
+convicto: `ANTISPOOF_LIMIAR` no `.env` da API, 0.75 por padrão. Baixar
+aperta, subir afrouxa. Medido na porta em 13/08/2026: pessoa presente
+99–100%, foto erguida 99% — sobra bastante espaço dos dois lados da linha.
+Toda leitura sai no console do servidor (`[vivacidade] pessoa (99% de
+certeza, limiar 75%)`), então recalibrar é olhar os números, não chutar.
+
 **No cadastro**, duas regras. A foto tem que ser tirada na hora, sem opção
 de galeria: o anti-spoofing reconhece foto de tela, mas não distingue uma
 selfie digital normal de outra pessoa, então qualquer imagem salva no
@@ -107,12 +118,13 @@ checagens de rosto, identidade, aula e lista foram observadas acertando —
 inclusive a mais sutil, alguém **reconhecido** e ainda assim negado por
 não estar na lista daquela aula.
 
-O que falta:
+Em 13/08/2026 a **vivacidade** foi medida na porta pela primeira vez, com
+a câmera da Raspberry: pessoa presente saiu entre 99% e 100% de certeza de
+"real", e uma foto erguida na frente da câmera foi negada com 99% de
+certeza de "falso". Contra um limiar de 75%, os dois lados ficam longe da
+linha — não é um empate resolvido por pouco.
 
-- **A vivacidade nunca foi testada na porta.** O anti-spoofing entrou
-  depois daquela validação: passa nos testes do servidor, mas ninguém
-  ainda ergueu uma foto na frente da câmera da Raspberry. Enquanto isso
-  não for feito, é código que funciona em teoria.
+O que falta:
 
 - **Sem internet, nada funciona.** O desenho parece local — a Raspberry
   fala com o Flask no PC, os dois na mesma rede — mas o Flask guarda tudo
@@ -121,9 +133,37 @@ O que falta:
   Auth. Cair a rede do prédio derruba o sistema inteiro, não só o app.
   A saída é a Pi manter uma cópia local dos rostos e dos convites do dia e
   sincronizar quando a rede volta; é o item grande ainda não começado.
-- Layout do totem é fixo em 1080p; o mini monitor de 7" tem outra resolução
-  (marcado com `ponytail:` em `api/raspberry/totem.py`).
-- Não existe medição da distância **entre capturas da mesma pessoa** — a
-  metade que diz quando o sistema barra quem tem direito. Falta alguém
-  cadastrar uma segunda foto. Entre pessoas diferentes, o par mais próximo
-  hoje está a 0,796, contra um limiar de 0,30.
+- O totem já desenha em qualquer resolução (o layout é feito em 1080p e
+  encaixado na tela real), mas **ninguém viu isso rodando no monitor de
+  7"** — só a conta está feita, não a conferência.
+- **As duas distribuições se sobrepõem, e o limiar de 0,30 só funciona por
+  causa das várias capturas.** Medido em 13/08/2026 com 7 capturas de 3
+  pessoas (`cd api && venv/Scripts/python medir_rostos.py`):
+
+  | | distância |
+  |---|---|
+  | duas capturas da MESMA pessoa | 0,116 a **0,520** |
+  | duas pessoas diferentes | a partir de **0,451** |
+
+  Repare que 0,520 é maior que 0,451: existem duas fotos do mesmo rosto
+  mais distantes entre si do que dois rostos diferentes. Ou seja, **não
+  existe um limiar único que separe "mesma pessoa" de "pessoa diferente"**
+  nesses dados. O que faz o sistema funcionar é a busca comparar contra a
+  captura MAIS PRÓXIMA das 5: cada captura está entre 0,116 e 0,230 de
+  alguma irmã, e é sempre uma delas que responde. Com uma foto só por
+  pessoa, a porta barraria quem tem direito.
+
+  A margem também está encolhendo conforme o banco cresce: o par mais
+  próximo entre pessoas diferentes era 0,796 com 3 capturas, 0,623 com 7 e
+  0,451 depois do recadastro. Ainda sobra folga sobre 0,30, mas isso é
+  medida de 3 pessoas — vale remedir a cada leva de cadastros, e é pra isso
+  que o `medir_rostos.py` existe.
+
+- **Não dá pra apagar UMA captura.** O `DELETE /faces` apaga todas as da
+  pessoa — não existe rota nem botão pra remover uma só. Isso importa
+  porque captura ruim acontece: em 13/08 a medição achou, na conta de um
+  aluno, um vetor a 0,9 de todas as outras dele — não era o rosto dele. Não
+  atrapalhava o dono (a busca pega a captura mais próxima), mas ficava no
+  banco como uma chave a mais capaz de abrir a porta no nome dele. A saída
+  foi apagar as 5 e cadastrar de novo, que é o único caminho que existe
+  hoje.
