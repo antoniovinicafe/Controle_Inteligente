@@ -1,36 +1,34 @@
+import psycopg2
 from flask import Blueprint, request, jsonify, g
 
+from services import cache_local, fila_offline
 from utils.auth_middleware import login_required
 from utils.device_auth import device_required
-from utils.db import get_conn, put_conn
-from services.face_service import calcular_embedding, MODELO, RostoFalsoError
+from utils.db import (
+    get_conn,
+    marcar_com_banco,
+    marcar_sem_banco,
+    put_conn,
+    sem_banco,
+)
+from services.face_service import (
+    LIMIAR_DISTANCIA,
+    MODELO,
+    RostoFalsoError,
+    calcular_embedding,
+    e_a_mesma_pessoa,
+)
 
 bp = Blueprint("faces", __name__, url_prefix="/api/faces")
 
-# Distância de cosseno máxima pra considerar que é a mesma pessoa.
-# 0 = idêntico, 1 = sem relação. 0.30 é o limiar que o próprio DeepFace
-# usa como padrão pro Facenet512 com métrica de cosseno. Subir aceita
-# mais parecidos (mais falso positivo = deixa entrar quem não devia);
-# baixar exige mais semelhança (mais falso negativo = barra quem devia).
-LIMIAR_DISTANCIA = 0.30
+# LIMIAR_DISTANCIA e e_a_mesma_pessoa vivem em services/face_service.py e são
+# reexportados aqui: a decisão offline (services/cache_local.py) precisa da
+# mesma definição, e serviço importando rota daria import circular.
 
 # Teto de capturas por pessoa. Não é limitação técnica - é pra a tabela não
 # crescer sem controle e pra a varredura exata (sem índice, ver schema.sql)
 # continuar rápida: o custo do reconhecimento é linear no total de linhas.
 MAX_FOTOS_POR_PESSOA = 5
-
-
-def e_a_mesma_pessoa(distancia: float) -> bool:
-    """
-    Único lugar do sistema que decide "esses dois rostos são a mesma pessoa".
-
-    A porta e o cadastro usam a MESMA definição, de propósito e em direções
-    opostas: a porta libera quando é a mesma pessoa, o cadastro recusa. É essa
-    simetria que sustenta a garantia de que duas contas nunca guardam rostos
-    que o leitor confundiria - se as duas leituras pudessem discordar, daria
-    pra cadastrar um par que a porta depois trocasse.
-    """
-    return distancia <= LIMIAR_DISTANCIA
 
 
 # Distância máxima entre uma captura nova e a captura mais próxima que a
@@ -232,44 +230,259 @@ def remover_rosto():
 
 # ------------------------------------------------------------
 # Reconhecimento (chamado pela Raspberry Pi na porta da sala)
+#
+# Todo veredito passa por três etapas separadas de propósito:
+#
+#   decidir   -> quem é, tem aula aqui agora, foi convidado
+#   gravar    -> log e presença
+#   responder -> o que o totem da porta mostra
+#
+# A separação existe porque cada uma tem um plano B diferente quando o
+# Postgres está fora de alcance: decidir cai pra cópia local, gravar cai
+# pra fila em arquivo, e responder não muda nada - o texto que a pessoa lê
+# na porta é o mesmo com internet ou sem.
 # ------------------------------------------------------------
 
-def _registrar(cur, evento_id, usuario_id, liberado, motivo):
-    """Todo veredito vira log - inclusive (e principalmente) as negativas."""
-    cur.execute(
-        """
-        insert into access_logs (evento_id, usuario_id, tipo, status, dispositivo, motivo)
-        values (%s, %s, 'facial', %s, %s, %s)
-        """,
-        (
-            evento_id,
-            usuario_id,
-            "liberado" if liberado else "negado",
-            g.dispositivo_nome,
-            motivo,
-        ),
-    )
-
-
-# As quatro perguntas do reconhecimento, na ordem em que são feitas.
+# As cinco perguntas do reconhecimento, na ordem em que são feitas.
 # Vão pra resposta como `etapa` pra que o leitor da porta saiba ONDE
 # parou sem precisar interpretar o texto do motivo - o texto é escrito
 # pra humano e pode mudar; isto é contrato.
 ETAPAS = ("rosto", "vivacidade", "identidade", "aula", "lista")
 
 
-def _resposta(liberado, motivo, cur, evento_id=None, usuario_id=None, nome=None, etapa=None):
-    # Quadro sem rosto NÃO vira log. O leitor da porta fica perguntando
-    # de tempos em tempos, então "não vi ninguém" é o estado normal de um
-    # corredor vazio - não uma tentativa de acesso. Registrar isso enchia
-    # o access_logs de ruído (numa medição, 85% das linhas) e afogava
+def _decidir_no_banco(cur, embedding) -> dict:
+    """
+    As três perguntas em SQL.
+
+    Devolve o MESMO formato de `cache_local.decidir`, com as mesmas
+    mensagens - as duas funções são pra ser lidas lado a lado. Quando uma
+    mudar, a outra tem que mudar junto, senão a porta passa a dizer coisas
+    diferentes dependendo de a internet estar de pé.
+    """
+    # (1) Vizinho mais próximo. O '<=>' do pgvector é distância de
+    # cosseno. Esta busca é EXATA (varredura da tabela) de propósito -
+    # veja o comentário no schema.sql sobre por que o índice ivfflat foi
+    # removido: ele devolvia zero linhas e a porta recusava gente
+    # cadastrada.
+    cur.execute(
+        """
+        select f.usuario_id, p.nome, (f.embedding <=> %s::vector) as distancia
+        from faces f
+        join profiles p on p.id = f.usuario_id
+        order by f.embedding <=> %s::vector
+        limit 1
+        """,
+        (embedding.tolist(), embedding.tolist()),
+    )
+    candidato = cur.fetchone()
+
+    if not candidato or not e_a_mesma_pessoa(candidato["distancia"]):
+        return {"liberado": False, "motivo": "Rosto não reconhecido", "etapa": "identidade"}
+
+    usuario_id = candidato["usuario_id"]
+    nome = candidato["nome"]
+
+    # (2) Aula rolando agora nesta sala. O local é texto livre digitado à
+    # mão ("Sala 201", "sala201"), então a comparação normaliza acento,
+    # caixa e espaços dos dois lados.
+    cur.execute(
+        """
+        select id, titulo
+        from eventos
+        where normaliza_local(local) = normaliza_local(%s)
+          and status in ('agendado', 'em_andamento')
+          and now() between data_inicio and data_fim
+        order by data_inicio
+        limit 1
+        """,
+        (g.dispositivo_local,),
+    )
+    evento = cur.fetchone()
+
+    if not evento:
+        return {
+            "liberado": False,
+            "motivo": f"Nenhuma aula acontecendo agora em {g.dispositivo_local}",
+            "etapa": "aula",
+            "nome": nome,
+            "usuario_id": usuario_id,
+        }
+
+    # (3) Reconhecido, aula existe - mas foi convidado?
+    cur.execute(
+        "select id from evento_participantes where evento_id = %s and usuario_id = %s",
+        (evento["id"], usuario_id),
+    )
+    if not cur.fetchone():
+        return {
+            "liberado": False,
+            "motivo": f"Não está na lista de \"{evento['titulo']}\"",
+            "etapa": "lista",
+            "nome": nome,
+            "usuario_id": usuario_id,
+            "evento_id": evento["id"],
+        }
+
+    return {
+        "liberado": True,
+        "motivo": f"Acesso liberado para \"{evento['titulo']}\"",
+        "etapa": None,
+        "nome": nome,
+        "usuario_id": usuario_id,
+        "evento_id": evento["id"],
+        "evento": evento["titulo"],
+    }
+
+
+def _decidir_pela_copia(embedding) -> dict:
+    copia = cache_local.carregar()
+    if not copia:
+        # Sem banco e sem cópia não dá pra afirmar nada sobre quem está na
+        # frente da câmera. Negar é a única resposta honesta, e o motivo
+        # diz que o problema é o servidor - não a pessoa.
+        return {
+            "liberado": False,
+            "motivo": "Servidor sem banco e sem cópia local",
+            "etapa": "identidade",
+        }
+
+    return cache_local.decidir(
+        copia,
+        embedding,
+        {"local": g.dispositivo_local, "local_norm": g.dispositivo_local_norm},
+    )
+
+
+def _decidir(embedding) -> dict:
+    """Pelo banco quando ele responde; pela cópia local quando não."""
+    if not sem_banco():
+        conn = None
+        try:
+            conn = get_conn()
+            with conn.cursor() as cur:
+                decisao = _decidir_no_banco(cur, embedding)
+            marcar_com_banco()
+            return decisao
+        except psycopg2.Error as e:
+            # Não é 500: é exatamente o caso pro qual a cópia local existe.
+            print(f"[porta] banco fora de alcance, decidindo pela cópia local: {e}",
+                  flush=True)
+            marcar_sem_banco()
+        finally:
+            if conn is not None:
+                put_conn(conn)
+
+    return _decidir_pela_copia(embedding)
+
+
+def _gravar(decisao: dict):
+    """
+    Log e presença - no banco quando dá, na fila em arquivo quando não.
+
+    Nunca levanta: uma falha ao registrar não pode virar erro na cara de
+    quem está na porta. O que ela não pode é sumir com o registro, e é a
+    fila que garante isso.
+    """
+    # Quadro sem rosto NÃO vira log. O leitor da porta fica perguntando de
+    # tempos em tempos, então "não vi ninguém" é o estado normal de um
+    # corredor vazio - não uma tentativa de acesso. Registrar isso enchia o
+    # access_logs de ruído (numa medição, 85% das linhas) e afogava
     # justamente o que a auditoria precisa enxergar: quem tentou entrar,
     # quando, e por que foi recusado.
-    if etapa != "rosto":
-        _registrar(cur, evento_id, usuario_id, liberado, motivo)
-    corpo = {"liberado": liberado, "motivo": motivo, "etapa": etapa}
-    if nome:
-        corpo["nome"] = nome
+    if decisao.get("etapa") == "rosto":
+        return
+
+    if sem_banco():
+        _enfileirar(decisao)
+        return
+
+    conn = None
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into access_logs
+                    (evento_id, usuario_id, tipo, status, dispositivo, motivo)
+                values (%s, %s, 'facial', %s, %s, %s)
+                """,
+                (
+                    decisao.get("evento_id"),
+                    decisao.get("usuario_id"),
+                    "liberado" if decisao["liberado"] else "negado",
+                    g.dispositivo_nome,
+                    decisao["motivo"],
+                ),
+            )
+
+            if decisao["liberado"] and decisao.get("evento_id"):
+                cur.execute(
+                    """
+                    update evento_participantes
+                    set status = 'liberado', liberado_em = now()
+                    where evento_id = %s and usuario_id = %s
+                    """,
+                    (decisao["evento_id"], decisao["usuario_id"]),
+                )
+        conn.commit()
+        marcar_com_banco()
+        _manutencao(conn)
+    except psycopg2.Error as e:
+        print(f"[porta] não deu pra gravar no banco, indo pra fila: {e}", flush=True)
+        marcar_sem_banco()
+        _enfileirar(decisao)
+    finally:
+        if conn is not None:
+            put_conn(conn)
+
+
+def _enfileirar(decisao: dict):
+    fila_offline.enfileirar(
+        liberado=decisao["liberado"],
+        motivo=decisao["motivo"],
+        dispositivo=g.dispositivo_nome,
+        evento_id=decisao.get("evento_id"),
+        usuario_id=decisao.get("usuario_id"),
+    )
+
+
+def _manutencao(conn):
+    """
+    De carona numa passagem que já deu certo: sobe o que ficou na fila e
+    renova a cópia local se estiver velha.
+
+    Fica aqui, e não numa thread de fundo, porque a porta sendo usada é o
+    único momento em que isso importa - e é o momento em que já se sabe que
+    o banco responde. Falha aqui não pode derrubar a resposta: cópia velha
+    ou fila que espera mais um pouco são bem menos graves que um erro na
+    cara de quem está na porta.
+    """
+    try:
+        with conn.cursor() as cur:
+            enviados = fila_offline.enviar(cur)
+            renovou = cache_local.atualizar_se_velho(cur)
+        conn.commit()
+        if enviados:
+            print(f"[porta] {enviados} veredito(s) offline subiram pro banco", flush=True)
+        if renovou:
+            print("[porta] cópia local renovada", flush=True)
+    except Exception as e:
+        conn.rollback()
+        print(f"[porta] manutenção adiada: {e}", flush=True)
+
+
+def _corpo(decisao: dict) -> dict:
+    corpo = {
+        "liberado": decisao["liberado"],
+        "motivo": decisao["motivo"],
+        "etapa": decisao.get("etapa"),
+    }
+    if decisao.get("nome"):
+        corpo["nome"] = decisao["nome"]
+    # O leitor mostra o nome da aula na tela; separado do `motivo` pra não
+    # ter que recortar texto do lado do dispositivo.
+    if decisao.get("evento"):
+        corpo["evento"] = decisao["evento"]
     return corpo
 
 
@@ -283,10 +496,14 @@ def reconhecer_rosto():
     resposta negativa vira um access_log com o motivo, porque tentativa
     recusada é exatamente o que um controle de acesso precisa registrar:
 
-      1. dá pra achar um rosto parecido o bastante no banco?
-      2. tem alguma aula acontecendo AGORA na sala deste dispositivo?
-      3. essa pessoa foi convidada pra essa aula?
-      4. tudo certo -> libera e marca presença.
+      1. é gente presente, e não uma foto erguida na frente da câmera?
+      2. dá pra achar um rosto parecido o bastante no cadastro?
+      3. tem alguma aula acontecendo AGORA na sala deste dispositivo?
+      4. essa pessoa foi convidada pra essa aula?
+
+    Sem internet, as perguntas continuam as mesmas: quem responde passa a
+    ser a cópia local (services/cache_local.py) e o registro vai pra fila
+    (services/fila_offline.py) em vez do Postgres.
 
     A imagem não é salva em lugar nenhum, igual ao cadastro.
     """
@@ -297,115 +514,22 @@ def reconhecer_rosto():
     if not imagem_bytes:
         return jsonify({"erro": "Arquivo de imagem vazio"}), 400
 
-    conn = get_conn()
+    # (0) Nem chegou a ser um rosto de gente presente. Não depende de banco
+    # nenhum: é só a foto e os modelos carregados aqui.
+    #
+    # RostoFalsoError vem ANTES do ValueError genérico de propósito: é
+    # subclasse dele, e na ordem inversa o except largo engoliria a
+    # tentativa de burla e ela viraria etapa "rosto" — que a gente não
+    # registra. Foto erguida na câmera some do log, justamente o oposto do
+    # que se quer.
     try:
-        with conn.cursor() as cur:
-            # (0) Nem chegou a ser um rosto de gente presente.
-            #
-            # RostoFalsoError vem ANTES do ValueError genérico de propósito:
-            # é subclasse dele, e na ordem inversa o except largo engoliria a
-            # tentativa de burla e ela viraria etapa "rosto" — que a gente
-            # não registra. Foto erguida na câmera some do log, justamente o
-            # oposto do que se quer.
-            try:
-                embedding = calcular_embedding(imagem_bytes)
-            except RostoFalsoError as e:
-                corpo = _resposta(False, str(e), cur, etapa="vivacidade")
-                conn.commit()
-                return jsonify(corpo), 200
-            except ValueError as e:
-                corpo = _resposta(False, str(e), cur, etapa="rosto")
-                conn.commit()
-                return jsonify(corpo), 200
+        embedding = calcular_embedding(imagem_bytes)
+    except RostoFalsoError as e:
+        decisao = {"liberado": False, "motivo": str(e), "etapa": "vivacidade"}
+    except ValueError as e:
+        decisao = {"liberado": False, "motivo": str(e), "etapa": "rosto"}
+    else:
+        decisao = _decidir(embedding)
 
-            # (1) Vizinho mais próximo. O '<=>' do pgvector é distância de
-            # cosseno. Esta busca é EXATA (varredura da tabela) de
-            # propósito - veja o comentário no schema.sql sobre por que o
-            # índice ivfflat foi removido: ele devolvia zero linhas e a
-            # porta recusava gente cadastrada.
-            cur.execute(
-                """
-                select f.usuario_id, p.nome, (f.embedding <=> %s::vector) as distancia
-                from faces f
-                join profiles p on p.id = f.usuario_id
-                order by f.embedding <=> %s::vector
-                limit 1
-                """,
-                (embedding.tolist(), embedding.tolist()),
-            )
-            candidato = cur.fetchone()
-
-            if not candidato or not e_a_mesma_pessoa(candidato["distancia"]):
-                corpo = _resposta(False, "Rosto não reconhecido", cur, etapa="identidade")
-                conn.commit()
-                return jsonify(corpo), 200
-
-            usuario_id = candidato["usuario_id"]
-            nome = candidato["nome"]
-
-            # (2) Aula rolando agora nesta sala. O local é texto livre
-            # digitado à mão ("Sala 201", "sala201"), então a comparação
-            # normaliza acento, caixa e espaços dos dois lados.
-            cur.execute(
-                """
-                select id, titulo
-                from eventos
-                where normaliza_local(local) = normaliza_local(%s)
-                  and status in ('agendado', 'em_andamento')
-                  and now() between data_inicio and data_fim
-                order by data_inicio
-                limit 1
-                """,
-                (g.dispositivo_local,),
-            )
-            evento = cur.fetchone()
-
-            if not evento:
-                corpo = _resposta(
-                    False,
-                    f"Nenhuma aula acontecendo agora em {g.dispositivo_local}",
-                    cur, usuario_id=usuario_id, nome=nome, etapa="aula",
-                )
-                conn.commit()
-                return jsonify(corpo), 200
-
-            # (3) Reconhecido, aula existe - mas foi convidado?
-            cur.execute(
-                """
-                select id, status from evento_participantes
-                where evento_id = %s and usuario_id = %s
-                """,
-                (evento["id"], usuario_id),
-            )
-            participante = cur.fetchone()
-
-            if not participante:
-                corpo = _resposta(
-                    False, f"Não está na lista de \"{evento['titulo']}\"",
-                    cur, evento_id=evento["id"], usuario_id=usuario_id, nome=nome,
-                    etapa="lista",
-                )
-                conn.commit()
-                return jsonify(corpo), 200
-
-            # (4) Libera e marca presença.
-            cur.execute(
-                """
-                update evento_participantes
-                set status = 'liberado', liberado_em = now()
-                where id = %s
-                """,
-                (participante["id"],),
-            )
-            corpo = _resposta(
-                True, f"Acesso liberado para \"{evento['titulo']}\"",
-                cur, evento_id=evento["id"], usuario_id=usuario_id, nome=nome,
-            )
-            # O leitor mostra o nome da aula na tela; separado do `motivo`
-            # pra não ter que recortar texto do lado do dispositivo.
-            corpo["evento"] = evento["titulo"]
-        conn.commit()
-    finally:
-        put_conn(conn)
-
-    return jsonify(corpo), 200
+    _gravar(decisao)
+    return jsonify(_corpo(decisao)), 200

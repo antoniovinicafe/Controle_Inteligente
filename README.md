@@ -155,12 +155,19 @@ O que falta:
   janela e dos dispositivos, e responde às mesmas três perguntas da porta
   sem sair do prédio. A Pi não muda em nada.
 
-  Pronto: gerar a cópia (`venv/Scripts/python services/cache_local.py`) e
-  as três consultas, com testes. Falta: usá-la como plano B no
-  `/faces/recognize` e no `device_auth`, e enfileirar presença e log
-  gerados offline pra subirem quando a rede voltar. Até isso existir, a
-  porta continua parando junto com a internet — a peça está pronta, o
-  sistema não.
+  A porta já decide sem banco: `/faces/recognize` e a autenticação do
+  leitor caem pra cópia quando o Postgres não responde, e cada veredito
+  tomado assim vai pra uma fila em arquivo (`services/fila_offline.py`)
+  que sobe sozinha na primeira leitura em que a rede voltar — carregando a
+  hora em que a porta decidiu, não a hora do envio. A cópia se renova de
+  carona nas leituras que dão certo.
+
+  **Falta a prova em hardware.** Isso nunca rodou com a Raspberry e o
+  cabo de rede na mão: o que existe são 99 testes, incluindo um que sobe
+  a rota e faz a porta inteira funcionar com o banco fingido de
+  inalcançável, e uma comparação contra o Postgres real mostrando que as
+  duas decisões devolvem o mesmo resultado pro mesmo rosto. Isso não
+  substitui puxar o cabo e ver o que acontece.
 
   O login do app segue dependendo do Supabase Auth de qualquer forma;
   offline vale pra porta, não pra entrar no aplicativo.

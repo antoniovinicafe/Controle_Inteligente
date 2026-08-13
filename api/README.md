@@ -63,6 +63,8 @@ routes/dispositivos.py    → cadastro dos leitores de porta e rotação da chav
 routes/faces.py           → cadastro/status/remoção de rosto + reconhecimento na porta
 medir_rostos.py           → mede as distâncias entre rostos cadastrados (calibra o limiar de 0,30)
 services/face_service.py  → DeepFace: embedding + anti-spoofing a partir de uma foto
+services/cache_local.py   → cópia dos rostos/eventos/dispositivos pra decidir sem internet
+services/fila_offline.py  → vereditos tomados offline, esperando subir pro Postgres
 raspberry/                → o que roda na Pi da porta (totem, captura, descoberta do servidor)
 tests/                    → pytest, sem banco: só a lógica que erra calado se quebrar
 ```
@@ -112,6 +114,17 @@ por papel.
   captura, e é frouxo porque duas fotos legítimas da mesma pessoa ficam longe
   uma da outra; e o limiar da vivacidade (0,75) não é distância nenhuma, é
   confiança do anti-spoofing.
+- **A porta tem dois caminhos que precisam concordar.** `_decidir_no_banco`
+  (SQL, em `routes/faces.py`) e `cache_local.decidir` (Python, sobre a cópia)
+  fazem as mesmas três perguntas e devolvem o MESMO dicionário, com as mesmas
+  mensagens — o totem mostra esse texto e ele não pode mudar conforme a
+  internet. As duas são pra ser lidas lado a lado; mexeu numa, mexa na outra.
+  O limiar de 0,30 mora em `services/face_service.py` justamente pra que as
+  duas o importem do mesmo lugar em vez de cada uma ter o seu.
+- **A manutenção pega carona na porta.** Subir a fila offline e renovar a
+  cópia acontecem depois de uma leitura que já deu certo, não numa thread de
+  fundo: se a porta está sendo usada, é o único momento em que isso importa,
+  e é quando já se sabe que o banco responde.
 - **A vivacidade não usa o veredito pronto do DeepFace.** `represent(anti_spoofing=True)`
   nega sempre que "real" não é a maior das três probabilidades do MiniFASNet —
   no voto de minerva — e joga fora o quanto ele estava certo disso. Como esse

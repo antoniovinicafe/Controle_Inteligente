@@ -16,9 +16,11 @@ import hashlib
 import secrets
 from functools import wraps
 
+import psycopg2
 from flask import request, jsonify, g
 
-from utils.db import get_conn, put_conn
+from services import cache_local
+from utils.db import get_conn, marcar_com_banco, marcar_sem_banco, put_conn, sem_banco
 
 
 def gerar_chave() -> str:
@@ -36,6 +38,26 @@ def hash_chave(chave: str) -> str:
     return hashlib.sha256(chave.encode()).hexdigest()
 
 
+def _da_copia(chave_hash: str):
+    """
+    O dispositivo pela cópia local. Devolve o registro, ou já a resposta
+    HTTP de recusa (que quem chama reconhece por ser uma tupla).
+    """
+    copia = cache_local.carregar()
+    if not copia:
+        # Sem banco e sem cópia não há como saber se a chave presta. Recusar
+        # é a única opção honesta - e o 503 diz que o problema é o servidor,
+        # não a chave do leitor.
+        return jsonify({"erro": "Servidor sem banco e sem cópia local"}), 503
+
+    dispositivo = cache_local.dispositivo_por_hash(copia, chave_hash)
+    if not dispositivo:
+        return jsonify({"erro": "Chave de dispositivo inválida"}), 401
+    if not dispositivo["ativo"]:
+        return jsonify({"erro": "Dispositivo desativado"}), 403
+    return dispositivo
+
+
 def device_required(f):
     """
     Exige um X-Device-Key válido de um dispositivo ativo.
@@ -48,33 +70,58 @@ def device_required(f):
         if not chave:
             return jsonify({"erro": "Dispositivo não identificado"}), 401
 
-        conn = get_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "select id, nome, local, ativo from dispositivos where chave_hash = %s",
-                    (hash_chave(chave),),
-                )
-                dispositivo = cur.fetchone()
+        chave_hash = hash_chave(chave)
 
-                if not dispositivo:
-                    return jsonify({"erro": "Chave de dispositivo inválida"}), 401
-                if not dispositivo["ativo"]:
-                    return jsonify({"erro": "Dispositivo desativado"}), 403
+        # Sem banco, o leitor é reconhecido pela cópia local. Ela guarda o
+        # mesmo hash que o Postgres, então a chave continua valendo o que
+        # valia - o que se perde é só o heartbeat, e saber que o leitor está
+        # vivo importa muito menos do que a porta abrir.
+        if sem_banco():
+            dispositivo = _da_copia(chave_hash)
+            if isinstance(dispositivo, tuple):
+                return dispositivo
+        else:
+            conn = None
+            try:
+                conn = get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "select id, nome, local, normaliza_local(local) as local_norm, "
+                        "ativo from dispositivos where chave_hash = %s",
+                        (chave_hash,),
+                    )
+                    dispositivo = cur.fetchone()
 
-                # Serve de "heartbeat": dá pra ver na tela do professor
-                # se o leitor da sala ainda está vivo.
-                cur.execute(
-                    "update dispositivos set ultimo_visto = now() where id = %s",
-                    (dispositivo["id"],),
-                )
-            conn.commit()
-        finally:
-            put_conn(conn)
+                    if not dispositivo:
+                        return jsonify({"erro": "Chave de dispositivo inválida"}), 401
+                    if not dispositivo["ativo"]:
+                        return jsonify({"erro": "Dispositivo desativado"}), 403
+
+                    # Serve de "heartbeat": dá pra ver na tela do professor
+                    # se o leitor da sala ainda está vivo.
+                    cur.execute(
+                        "update dispositivos set ultimo_visto = now() where id = %s",
+                        (dispositivo["id"],),
+                    )
+                conn.commit()
+                marcar_com_banco()
+            except psycopg2.Error:
+                # Banco fora de alcance. Não é erro do leitor nem motivo pra
+                # 500: é o caso pro qual a cópia local existe.
+                marcar_sem_banco()
+                dispositivo = _da_copia(chave_hash)
+                if isinstance(dispositivo, tuple):
+                    return dispositivo
+            finally:
+                if conn is not None:
+                    put_conn(conn)
 
         g.dispositivo_id = dispositivo["id"]
         g.dispositivo_nome = dispositivo["nome"]
         g.dispositivo_local = dispositivo["local"]
+        # A decisão offline compara sala já normalizada; online quem
+        # normaliza é o Postgres, então este campo pode não existir.
+        g.dispositivo_local_norm = dispositivo.get("local_norm")
 
         return f(*args, **kwargs)
 

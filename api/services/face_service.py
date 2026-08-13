@@ -34,6 +34,31 @@ MODELO = "Facenet512"  # gera vetor de 512 posições (bate com o schema.sql)
 LIMIAR_FALSIDADE = float(os.environ.get("ANTISPOOF_LIMIAR", "0.75"))
 
 
+# Distância de cosseno máxima pra considerar que é a mesma pessoa.
+# 0 = idêntico, 1 = sem relação. 0.30 é o limiar que o próprio DeepFace usa
+# como padrão pro Facenet512 com métrica de cosseno. Subir aceita mais
+# parecidos (mais falso positivo = deixa entrar quem não devia); baixar
+# exige mais semelhança (mais falso negativo = barra quem devia).
+#
+# Mora aqui, e não na rota, porque agora são três os lugares que precisam
+# da MESMA definição de "é a mesma pessoa": a porta, o cadastro e a decisão
+# offline. Dois deles importam daqui justamente pra não poderem discordar.
+LIMIAR_DISTANCIA = 0.30
+
+
+def e_a_mesma_pessoa(distancia: float) -> bool:
+    """
+    Único lugar do sistema que decide "esses dois rostos são a mesma pessoa".
+
+    A porta e o cadastro usam a MESMA definição, de propósito e em direções
+    opostas: a porta libera quando é a mesma pessoa, o cadastro recusa. É essa
+    simetria que sustenta a garantia de que duas contas nunca guardam rostos
+    que o leitor confundiria - se as duas leituras pudessem discordar, daria
+    pra cadastrar um par que a porta depois trocasse.
+    """
+    return distancia <= LIMIAR_DISTANCIA
+
+
 class RostoFalsoError(ValueError):
     """
     Achou um rosto, mas ele veio de uma foto impressa ou de uma tela.

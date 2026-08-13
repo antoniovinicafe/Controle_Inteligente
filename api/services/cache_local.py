@@ -195,6 +195,83 @@ def dispositivo_por_hash(copia: dict, chave_hash: str) -> dict | None:
 
 
 # ------------------------------------------------------------
+# Decidir - a mesma sequência do /faces/recognize, sem banco
+# ------------------------------------------------------------
+
+def decidir(copia: dict, embedding, dispositivo: dict, agora: datetime = None) -> dict:
+    """
+    Quem é, tem aula aqui agora, foi convidado - nesta ordem, e qualquer não
+    encerra. É a mesma sequência que a rota faz em SQL, com as mesmas
+    mensagens: o totem da porta mostra esse texto, e ele não pode mudar de
+    forma dependendo de a internet estar de pé.
+
+    `e_a_mesma_pessoa` vem do face_service justamente pra que o limiar da
+    decisão offline não possa divergir do online.
+    """
+    from services.face_service import e_a_mesma_pessoa
+
+    vizinho = vizinho_mais_proximo(copia, embedding)
+    if not vizinho or not e_a_mesma_pessoa(vizinho[1]):
+        return {"liberado": False, "motivo": "Rosto não reconhecido", "etapa": "identidade"}
+
+    face, _ = vizinho
+    evento = evento_agora(copia, dispositivo["local_norm"], agora)
+    if not evento:
+        return {
+            "liberado": False,
+            "motivo": f"Nenhuma aula acontecendo agora em {dispositivo['local']}",
+            "etapa": "aula",
+            "nome": face["nome"],
+            "usuario_id": face["usuario_id"],
+        }
+
+    if not esta_na_lista(evento, face["usuario_id"]):
+        return {
+            "liberado": False,
+            "motivo": f"Não está na lista de \"{evento['titulo']}\"",
+            "etapa": "lista",
+            "nome": face["nome"],
+            "usuario_id": face["usuario_id"],
+            "evento_id": evento["id"],
+        }
+
+    return {
+        "liberado": True,
+        "motivo": f"Acesso liberado para \"{evento['titulo']}\"",
+        "etapa": None,
+        "nome": face["nome"],
+        "usuario_id": face["usuario_id"],
+        "evento_id": evento["id"],
+        "evento": evento["titulo"],
+    }
+
+
+# ------------------------------------------------------------
+# Manter em dia
+# ------------------------------------------------------------
+
+# De quanto em quanto tempo vale regerar a cópia. Meia hora é o atraso
+# máximo aceitável pra uma aula criada agora aparecer na porta se a rede
+# cair logo em seguida - e é barato: são poucos KB e uma consulta.
+MINUTOS_ENTRE_ATUALIZACOES = 30
+
+
+def atualizar_se_velho(cur, minutos: int = MINUTOS_ENTRE_ATUALIZACOES) -> bool:
+    """
+    Regera a cópia se ela não existe ou está velha. Devolve se regerou.
+
+    Chamada de carona numa leitura que já deu certo, em vez de por uma
+    thread de fundo: se a porta está sendo usada, a cópia se mantém quente
+    sozinha; se ninguém passa na porta, não há o que manter atualizado.
+    """
+    copia = carregar()
+    if copia and idade_em_horas(copia) * 60 < minutos:
+        return False
+    salvar(gerar(cur))
+    return True
+
+
+# ------------------------------------------------------------
 # CLI: gerar e conferir
 # ------------------------------------------------------------
 
