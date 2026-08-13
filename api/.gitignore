@@ -22,6 +22,11 @@ device_key*
 cache_local.json
 cache_local.tmp
 
+# Vereditos tomados enquanto o banco estava fora de alcance, esperando
+# subir (services/fila_offline.py). Tem usuario_id e horário de quem passou
+# na porta - é registro de presença, não sobe pra repositório nenhum.
+pendentes.jsonl
+
 # ---------------------------------------------------------------------------
 # Pesado e regenerável
 # ---------------------------------------------------------------------------
