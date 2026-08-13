@@ -146,8 +146,24 @@ O que falta:
   no Postgres do Supabase, que fica na AWS em São Paulo. Toda decisão da
   porta é uma consulta que atravessa a internet, e o login é no Supabase
   Auth. Cair a rede do prédio derruba o sistema inteiro, não só o app.
-  A saída é a Pi manter uma cópia local dos rostos e dos convites do dia e
-  sincronizar quando a rede volta; é o item grande ainda não começado.
+
+  **Começado em 13/08/2026, e a solução mudou de lugar.** O plano era a Pi
+  guardar a cópia — mas isso a obriga a calcular o embedding sozinha, que é
+  justamente o que ela não faz e o motivo de ser burra. Como o elo que
+  quebra é a internet, e não a rede local, a cópia fica no **Flask**:
+  `api/services/cache_local.py` monta um retrato dos rostos, dos eventos da
+  janela e dos dispositivos, e responde às mesmas três perguntas da porta
+  sem sair do prédio. A Pi não muda em nada.
+
+  Pronto: gerar a cópia (`venv/Scripts/python services/cache_local.py`) e
+  as três consultas, com testes. Falta: usá-la como plano B no
+  `/faces/recognize` e no `device_auth`, e enfileirar presença e log
+  gerados offline pra subirem quando a rede voltar. Até isso existir, a
+  porta continua parando junto com a internet — a peça está pronta, o
+  sistema não.
+
+  O login do app segue dependendo do Supabase Auth de qualquer forma;
+  offline vale pra porta, não pra entrar no aplicativo.
 - **As duas distribuições se sobrepõem, e o limiar de 0,30 só funciona por
   causa das várias capturas.** Medido em 13/08/2026 com 7 capturas de 3
   pessoas (`cd api && venv/Scripts/python medir_rostos.py`):

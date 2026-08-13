@@ -16,6 +16,12 @@ device_key*
 *.pem
 *.key
 
+# Cópia local pra decidir a porta sem internet (services/cache_local.py).
+# Regenerável a qualquer momento, e não pode subir: tem os vetores faciais
+# de todo mundo e o hash das chaves dos leitores.
+cache_local.json
+cache_local.tmp
+
 # ---------------------------------------------------------------------------
 # Pesado e regenerável
 # ---------------------------------------------------------------------------
