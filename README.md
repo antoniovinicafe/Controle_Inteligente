@@ -124,6 +124,10 @@ a câmera da Raspberry: pessoa presente saiu entre 99% e 100% de certeza de
 certeza de "falso". Contra um limiar de 75%, os dois lados ficam longe da
 linha — não é um empate resolvido por pouco.
 
+No mesmo dia o totem passou a se encaixar em qualquer resolução, e isso
+foi conferido rodando no mini monitor de 7" da porta: o layout continua
+desenhado em 1080p e é ajustado à tela real na hora de exibir.
+
 O que falta:
 
 - **Sem internet, nada funciona.** O desenho parece local — a Raspberry
@@ -133,9 +137,6 @@ O que falta:
   Auth. Cair a rede do prédio derruba o sistema inteiro, não só o app.
   A saída é a Pi manter uma cópia local dos rostos e dos convites do dia e
   sincronizar quando a rede volta; é o item grande ainda não começado.
-- O totem já desenha em qualquer resolução (o layout é feito em 1080p e
-  encaixado na tela real), mas **ninguém viu isso rodando no monitor de
-  7"** — só a conta está feita, não a conferência.
 - **As duas distribuições se sobrepõem, e o limiar de 0,30 só funciona por
   causa das várias capturas.** Medido em 13/08/2026 com 7 capturas de 3
   pessoas (`cd api && venv/Scripts/python medir_rostos.py`):
