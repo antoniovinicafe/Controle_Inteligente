@@ -101,9 +101,17 @@ por papel.
   passar por aqui.
 - **Nada de índice `ivfflat` na tabela `faces`.** Já existiu um e fazia a porta
   recusar gente cadastrada — o porquê está comentado no `schema.sql`.
-- **Vários rostos por pessoa** (até 5), e **um rosto pertence a uma conta só**.
-  O motivo das duas regras está no cabeçalho de `tests/test_multiplos_rostos.py`
-  e `tests/test_rosto_duplicado.py`.
+- **Vários rostos por pessoa** (até 5), **um rosto pertence a uma conta só**, e
+  **da segunda foto em diante a captura tem que parecer com as que a conta já
+  tem**. O motivo das três regras está no cabeçalho de
+  `tests/test_multiplos_rostos.py`, `tests/test_rosto_duplicado.py` e
+  `tests/test_rosto_estranho.py`.
+- **São três limiares diferentes de distância, e confundi-los quebra coisas
+  opostas.** 0,30 decide "é a mesma pessoa" na porta e no cadastro (o mesmo
+  número nos dois, de propósito); 0,70 decide "essa foto é sua" ao acrescentar
+  captura, e é frouxo porque duas fotos legítimas da mesma pessoa ficam longe
+  uma da outra; e o limiar da vivacidade (0,75) não é distância nenhuma, é
+  confiança do anti-spoofing.
 - **A vivacidade não usa o veredito pronto do DeepFace.** `represent(anti_spoofing=True)`
   nega sempre que "real" não é a maior das três probabilidades do MiniFASNet —
   no voto de minerva — e joga fora o quanto ele estava certo disso. Como esse

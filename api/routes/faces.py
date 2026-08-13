@@ -33,6 +33,44 @@ def e_a_mesma_pessoa(distancia: float) -> bool:
     return distancia <= LIMIAR_DISTANCIA
 
 
+# Distância máxima entre uma captura nova e a captura mais próxima que a
+# própria pessoa já tem.
+#
+# NÃO é o limiar do reconhecimento, e não poderia ser: duas fotos legítimas
+# da mesma pessoa passam de 0,30 com folga - é justamente por isso que se
+# guarda mais de uma. Exigir 0,30 aqui recusaria a segunda foto de quase
+# todo mundo, logo a que existe pra cobrir a outra condição de luz.
+#
+# O que se quer barrar é o vetor que não é aquele rosto. Medido em
+# 13/08/2026 (ver medir_rostos.py): entre 5 capturas legítimas da mesma
+# pessoa, o par mais distante deu 0,520; uma captura intrusa na mesma conta
+# estava a 0,895 da mais próxima. 0,70 fica entre as duas com folga parecida
+# dos dois lados.
+#
+# O 0,520 é o número que manda aqui, não o 0,23 da irmã mais próxima: quem
+# tem UMA captura só e vai tirar a segunda em outra condição está justamente
+# no pior caso, sem outras fotos pra ficar perto. Apertar isso recusaria a
+# segunda foto - logo a que existe pra cobrir a outra luz.
+LIMIAR_ROSTO_ESTRANHO = 0.70
+
+
+def e_o_mesmo_rosto(distancia: float) -> bool:
+    """A captura nova é a mesma cara das que a conta já tem?"""
+    return distancia <= LIMIAR_ROSTO_ESTRANHO
+
+
+def _propria_mais_proxima(cur, usuario_id, embedding):
+    """Distância até a captura mais próxima que a própria pessoa já tem."""
+    cur.execute(
+        """
+        select min(embedding <=> %s::vector) as distancia
+        from faces where usuario_id = %s
+        """,
+        (embedding.tolist(), usuario_id),
+    )
+    return cur.fetchone()["distancia"]
+
+
 def _dono_parecido(cur, usuario_id, embedding):
     """
     O rosto mais próximo deste que pertence a OUTRA conta, se houver.
@@ -87,6 +125,25 @@ def cadastrar_rosto():
                     "erro": f"Você já tem {ja_tem} fotos cadastradas, que é o "
                             "máximo. Remova as atuais pra cadastrar de novo."
                 }), 409
+
+            # A foto nova é da mesma cara das que já estão aqui?
+            #
+            # Sem isto, qualquer rosto que ainda não esteja em outra conta
+            # entra em silêncio - e foi o que aconteceu em 13/08/2026: um
+            # vetor a 0,895 de todas as outras capturas da pessoa. Não
+            # atrapalha o dono, porque a porta compara contra a captura mais
+            # próxima e nunca escolhe essa; fica é como uma chave a mais,
+            # capaz de abrir a porta no nome dele pra quem se parecer com
+            # ela. Não dá pra apagar uma captura só, então barrar na entrada
+            # é o único momento barato de resolver.
+            if ja_tem:
+                distancia = _propria_mais_proxima(cur, g.user_id, embedding)
+                if not e_o_mesmo_rosto(distancia):
+                    return jsonify({
+                        "erro": "Essa foto não parece a mesma pessoa das suas "
+                                "outras. Tente de novo de frente, com o rosto "
+                                "inteiro no quadro e mais luz."
+                    }), 422
 
             # Esse rosto já é de outra conta?
             #

@@ -70,13 +70,24 @@ aperta, subir afrouxa. Medido na porta em 13/08/2026: pessoa presente
 Toda leitura sai no console do servidor (`[vivacidade] pessoa (99% de
 certeza, limiar 75%)`), então recalibrar é olhar os números, não chutar.
 
-**No cadastro**, duas regras. A foto tem que ser tirada na hora, sem opção
+**No cadastro**, três regras. A foto tem que ser tirada na hora, sem opção
 de galeria: o anti-spoofing reconhece foto de tela, mas não distingue uma
 selfie digital normal de outra pessoa, então qualquer imagem salva no
-celular serviria. E um rosto pertence a uma conta só — se já está
-cadastrado em outra, o servidor recusa. Sem isso dava pra registrar o
-rosto de um colega e receber a presença dele, uma fraude que não é barrada
-por ninguém e não aparece no log: só o nome vem trocado.
+celular serviria. Um rosto pertence a uma conta só — se já está cadastrado
+em outra, o servidor recusa. Sem isso dava pra registrar o rosto de um
+colega e receber a presença dele, uma fraude que não é barrada por ninguém
+e não aparece no log: só o nome vem trocado.
+
+E, da segunda foto em diante, a captura tem que parecer com alguma que a
+pessoa já tem (limiar próprio, 0,70 — bem mais frouxo que o do
+reconhecimento, porque duas fotos legítimas em condições diferentes ficam
+longe uma da outra). A regra anterior só recusa rosto que **já está** em
+outra conta; rosto de quem não é cadastrado entrava calado, e foi o que
+aconteceu em 13/08/2026 — a medição achou, entre as 5 capturas de um
+aluno, uma a 0,895 de todas as outras. Um vetor desses não atrapalha o
+dono, mas fica no banco como uma chave a mais capaz de abrir a porta no
+nome dele. A primeira foto da conta segue sem essa proteção, por não ter
+com o que se comparar.
 
 Cada pessoa pode guardar até 5 capturas (luz, ângulo, óculos). A busca
 compara contra a mais próxima delas, o que cobre a variação real sem
@@ -161,10 +172,8 @@ O que falta:
   que o `medir_rostos.py` existe.
 
 - **Não dá pra apagar UMA captura.** O `DELETE /faces` apaga todas as da
-  pessoa — não existe rota nem botão pra remover uma só. Isso importa
-  porque captura ruim acontece: em 13/08 a medição achou, na conta de um
-  aluno, um vetor a 0,9 de todas as outras dele — não era o rosto dele. Não
-  atrapalhava o dono (a busca pega a captura mais próxima), mas ficava no
-  banco como uma chave a mais capaz de abrir a porta no nome dele. A saída
-  foi apagar as 5 e cadastrar de novo, que é o único caminho que existe
-  hoje.
+  pessoa — não existe rota nem botão pra remover uma só. Depois de 13/08 o
+  cadastro barra na entrada a captura que não parece o rosto de quem a
+  envia (ver "O que impede a burla"), então o caso que motivou isto não
+  deve se repetir; mas se entrar alguma por outro motivo, a única saída
+  continua sendo apagar todas e cadastrar de novo.
