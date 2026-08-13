@@ -26,6 +26,28 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- O servidor Flask roda na rede local, em http:// puro. O iOS bloqueia
+	     HTTP sem TLS por padrão (App Transport Security), então sem isto o
+	     login até funciona (o Supabase é https) e todo o resto do app falha
+	     sem explicação. NSAllowsLocalNetworking libera só endereço privado e
+	     .local - não é o NSAllowsArbitraryLoads, que abriria HTTP pra
+	     internet inteira. O equivalente no Android é o
+	     android:usesCleartextTraffic do AndroidManifest. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- Sem esta chave o iOS MATA o app no instante em que a câmera abre -
+	     não é permissão negada, é encerramento do processo. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Pra cadastrar seu rosto. A foto não é guardada — o servidor extrai só o código numérico que a porta usa pra te reconhecer e descarta a imagem.</string>
+	<!-- iOS 14+ pede autorização pra falar com aparelhos da rede local, e
+	     é isso que o app faz o tempo todo: o servidor do Fetin não está na
+	     internet. Sem a chave, a permissão nem é pedida e as conexões só
+	     falham. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>O Fetin conversa com o servidor da rede do Inatel pra carregar suas aulas e cadastrar seu rosto.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
