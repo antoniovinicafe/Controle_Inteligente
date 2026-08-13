@@ -7,6 +7,51 @@ from services.face_service import calcular_embedding, MODELO, RostoFalsoError
 
 bp = Blueprint("faces", __name__, url_prefix="/api/faces")
 
+# Distância de cosseno máxima pra considerar que é a mesma pessoa.
+# 0 = idêntico, 1 = sem relação. 0.30 é o limiar que o próprio DeepFace
+# usa como padrão pro Facenet512 com métrica de cosseno. Subir aceita
+# mais parecidos (mais falso positivo = deixa entrar quem não devia);
+# baixar exige mais semelhança (mais falso negativo = barra quem devia).
+LIMIAR_DISTANCIA = 0.30
+
+# Teto de capturas por pessoa. Não é limitação técnica - é pra a tabela não
+# crescer sem controle e pra a varredura exata (sem índice, ver schema.sql)
+# continuar rápida: o custo do reconhecimento é linear no total de linhas.
+MAX_FOTOS_POR_PESSOA = 5
+
+
+def e_a_mesma_pessoa(distancia: float) -> bool:
+    """
+    Único lugar do sistema que decide "esses dois rostos são a mesma pessoa".
+
+    A porta e o cadastro usam a MESMA definição, de propósito e em direções
+    opostas: a porta libera quando é a mesma pessoa, o cadastro recusa. É essa
+    simetria que sustenta a garantia de que duas contas nunca guardam rostos
+    que o leitor confundiria - se as duas leituras pudessem discordar, daria
+    pra cadastrar um par que a porta depois trocasse.
+    """
+    return distancia <= LIMIAR_DISTANCIA
+
+
+def _dono_parecido(cur, usuario_id, embedding):
+    """
+    O rosto mais próximo deste que pertence a OUTRA conta, se houver.
+
+    Mesma busca do reconhecimento, tirando as capturas da própria pessoa -
+    senão a segunda foto de alguém seria recusada por parecer com a primeira.
+    """
+    cur.execute(
+        """
+        select f.usuario_id, (f.embedding <=> %s::vector) as distancia
+        from faces f
+        where f.usuario_id <> %s
+        order by f.embedding <=> %s::vector
+        limit 1
+        """,
+        (embedding.tolist(), usuario_id, embedding.tolist()),
+    )
+    return cur.fetchone()
+
 
 @bp.route("", methods=["POST"])
 @login_required
@@ -41,6 +86,27 @@ def cadastrar_rosto():
                 return jsonify({
                     "erro": f"Você já tem {ja_tem} fotos cadastradas, que é o "
                             "máximo. Remova as atuais pra cadastrar de novo."
+                }), 409
+
+            # Esse rosto já é de outra conta?
+            #
+            # Sem isto dá pra cadastrar o rosto de um colega na própria conta e
+            # ganhar a presença dele: ele chega na porta, o leitor acha a linha
+            # de quem cadastrou e marca a pessoa errada como presente. É a
+            # fraude que o reconhecimento facial deveria justamente eliminar -
+            # o "assina a lista por mim" de sempre, agora automatizado.
+            #
+            # Recusar o segundo cadastro basta: o rosto continua valendo pra
+            # quem o cadastrou primeiro, e nenhuma outra conta consegue
+            # reivindicá-lo.
+            conflito = _dono_parecido(cur, g.user_id, embedding)
+            if conflito and e_a_mesma_pessoa(conflito["distancia"]):
+                # De quem é o rosto não sai daqui. Confirmar "esse rosto é do
+                # fulano" transformaria o cadastro num consultor de quem está
+                # cadastrado - qualquer um poderia testar rostos alheios.
+                return jsonify({
+                    "erro": "Esse rosto já está cadastrado em outra conta. "
+                            "Se isso for engano, procure um administrador."
                 }), 409
 
             cur.execute(
@@ -110,19 +176,6 @@ def remover_rosto():
 # ------------------------------------------------------------
 # Reconhecimento (chamado pela Raspberry Pi na porta da sala)
 # ------------------------------------------------------------
-
-# Distância de cosseno máxima pra considerar que é a mesma pessoa.
-# 0 = idêntico, 1 = sem relação. 0.30 é o limiar que o próprio DeepFace
-# usa como padrão pro Facenet512 com métrica de cosseno. Subir aceita
-# mais parecidos (mais falso positivo = deixa entrar quem não devia);
-# baixar exige mais semelhança (mais falso negativo = barra quem devia).
-LIMIAR_DISTANCIA = 0.30
-
-# Teto de capturas por pessoa. Não é limitação técnica - é pra a tabela não
-# crescer sem controle e pra a varredura exata (sem índice, ver schema.sql)
-# continuar rápida: o custo do reconhecimento é linear no total de linhas.
-MAX_FOTOS_POR_PESSOA = 5
-
 
 def _registrar(cur, evento_id, usuario_id, liberado, motivo):
     """Todo veredito vira log - inclusive (e principalmente) as negativas."""
@@ -225,7 +278,7 @@ def reconhecer_rosto():
             )
             candidato = cur.fetchone()
 
-            if not candidato or candidato["distancia"] > LIMIAR_DISTANCIA:
+            if not candidato or not e_a_mesma_pessoa(candidato["distancia"]):
                 corpo = _resposta(False, "Rosto não reconhecido", cur, etapa="identidade")
                 conn.commit()
                 return jsonify(corpo), 200

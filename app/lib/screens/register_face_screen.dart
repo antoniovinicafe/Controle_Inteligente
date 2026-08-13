@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../config/tema.dart';
@@ -21,6 +20,13 @@ import '../utils/formatters.dart';
 /// numa ferramenta que a pessoa usa uma vez e esquece. O enquadramento
 /// vertical aqui é o mesmo 3:4 que o leitor da porta usa - o app mostra
 /// você do jeito que a porta vai te ver.
+///
+/// SÓ CÂMERA, de propósito. Existia aqui um "escolher da galeria", e ele
+/// furava o sistema inteiro: o anti-spoofing do servidor reconhece foto de
+/// tela e de papel, não distingue uma selfie digital normal de outra pessoa.
+/// Qualquer um poderia cadastrar o rosto de um colega salvo no celular e
+/// passar a receber a presença dele. A captura ao vivo é o que amarra o rosto
+/// a quem está segurando o aparelho.
 class RegisterFaceScreen extends StatefulWidget {
   const RegisterFaceScreen({super.key});
 
@@ -29,8 +35,6 @@ class RegisterFaceScreen extends StatefulWidget {
 }
 
 class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
-  final _picker = ImagePicker();
-
   // ── Estado ────────────────────────────────────────────────────
   bool _cadastrado = false;
   int _totalFotos = 0;
@@ -130,17 +134,6 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
     } catch (e) {
       _showError('Erro ao capturar: $e');
     }
-  }
-
-  Future<void> _pickFromGallery() async {
-    final xfile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
-    if (xfile == null) return;
-    final bytes = await File(xfile.path).readAsBytes();
-    setState(() {
-      _capturedBytes = bytes;
-      _uploadState = _UploadState.idle;
-      _errorMsg = null;
-    });
   }
 
   void _retake() => setState(() {
@@ -303,12 +296,6 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
           icon: const Icon(Icons.camera_alt_outlined, size: 19),
           label: const Text('Tirar foto'),
         ),
-        const SizedBox(height: 10),
-        TextButton.icon(
-          onPressed: _pickFromGallery,
-          icon: const Icon(Icons.photo_library_outlined, size: 18),
-          label: const Text('Escolher da galeria'),
-        ),
       ],
     );
   }
@@ -446,8 +433,8 @@ class _Visor extends StatelessWidget {
       return const _Aviso(
         icone: Icons.no_photography_outlined,
         titulo: 'Sem acesso à câmera',
-        texto: 'Autorize a câmera nas configurações do celular pra tirar a foto. '
-            'Dá pra seguir escolhendo uma imagem da galeria.',
+        texto: 'Autorize a câmera nas configurações do celular. O cadastro só '
+            'aceita foto tirada na hora — é o que garante que o rosto é o seu.',
       );
     }
 

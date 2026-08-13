@@ -19,9 +19,9 @@ dependencies:
   supabase_flutter: ^2.8.0   # login/sessão/JWT
   provider: ^6.1.2           # gerenciamento de estado
   
-  # Camera
+  # Camera. Sem image_picker de propósito: o cadastro de rosto não aceita
+  # imagem da galeria (ver register_face_screen.dart).
   camera: ^0.10.5+9
-  image_picker: ^1.1.2
 
   # HTTP & encoding
   http: ^1.2.1
