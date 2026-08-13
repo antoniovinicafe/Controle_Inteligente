@@ -19,8 +19,17 @@ class UsuariosService {
   }
 
   /// Presença do usuário logado nas aulas que já aconteceram.
-  static Future<Frequencia> minhaFrequencia() async {
-    final json = await ApiClient.get('/usuarios/me/frequencia');
-    return Frequencia.fromJson(json as Map<String, dynamic>);
+  /// Frequência por disciplina, que é a que decide aprovação. O agregado
+  /// vem junto na mesma resposta, mas quem reprova ou não é a linha da
+  /// turma - 80% somado pode esconder 50% numa matéria só.
+  static Future<({Frequencia geral, List<FrequenciaDaTurma> turmas})>
+      minhaFrequencia() async {
+    final json = await ApiClient.get('/usuarios/me/frequencia') as Map<String, dynamic>;
+    return (
+      geral: Frequencia.fromJson(json),
+      turmas: ((json['turmas'] as List?) ?? [])
+          .map((t) => FrequenciaDaTurma.fromJson(t as Map<String, dynamic>))
+          .toList(),
+    );
   }
 }

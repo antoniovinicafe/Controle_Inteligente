@@ -114,6 +114,13 @@ por papel.
   captura, e é frouxo porque duas fotos legítimas da mesma pessoa ficam longe
   uma da outra; e o limiar da vivacidade (0,75) não é distância nenhuma, é
   confiança do anti-spoofing.
+- **Frequência é por disciplina, e o limite de faltas sai das aulas MARCADAS.**
+  75% é por matéria — somar todas as turmas dá um número que não decide nada
+  (80% no agregado esconde 50% numa delas). E `reprovado_por_falta` só é
+  afirmado quando já cabia pelo menos uma falta: `previstas` são as aulas já
+  criadas, não o tamanho do semestre, então sem essa condição quem perde a
+  primeira aula do ano aparece reprovado. O porquê está em
+  `tests/test_frequencia.py`.
 - **A porta tem dois caminhos que precisam concordar.** `_decidir_no_banco`
   (SQL, em `routes/faces.py`) e `cache_local.decidir` (Python, sobre a cópia)
   fazem as mesmas três perguntas e devolvem o MESMO dicionário, com as mesmas

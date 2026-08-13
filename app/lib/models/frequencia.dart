@@ -9,20 +9,59 @@ class Frequencia {
   /// pareceria péssima frequência em vez de "ainda não teve aula".
   final int? percentual;
 
+  /// Quantas faltas ainda cabem no semestre, contando as aulas que ainda
+  /// vão acontecer. É o número que dá pra agir em cima - o percentual é um
+  /// retrato do passado, este aqui é um aviso a tempo.
+  final int faltasRestantes;
+
+  /// Já passou do que o semestre comporta.
+  final bool reprovadoPorFalta;
+
   const Frequencia({
     required this.total,
     required this.presencas,
     required this.faltas,
     required this.percentual,
+    this.faltasRestantes = 0,
+    this.reprovadoPorFalta = false,
   });
 
   bool get semAulas => total == 0;
+
+  /// Uma falta separa a pessoa do limite. O aviso vale a pena aqui e não
+  /// antes: avisar cedo demais ensina a ignorar o aviso.
+  bool get noLimite => !reprovadoPorFalta && faltasRestantes <= 1;
 
   factory Frequencia.fromJson(Map<String, dynamic> json) => Frequencia(
         total: (json['total'] as num).toInt(),
         presencas: (json['presencas'] as num).toInt(),
         faltas: (json['faltas'] as num).toInt(),
         percentual: (json['percentual'] as num?)?.toInt(),
+        // Ausentes num servidor mais antigo: o app continua funcionando,
+        // só sem o aviso.
+        faltasRestantes: (json['faltas_restantes'] as num?)?.toInt() ?? 0,
+        reprovadoPorFalta: json['reprovado_por_falta'] == true,
+      );
+}
+
+/// A frequência numa disciplina. É esta que decide aprovação — o número
+/// somado de todas as turmas não decide nada, porque a regra dos 75% é por
+/// disciplina.
+class FrequenciaDaTurma {
+  final int? turmaId;
+  final String turma;
+  final Frequencia frequencia;
+
+  const FrequenciaDaTurma({
+    required this.turmaId,
+    required this.turma,
+    required this.frequencia,
+  });
+
+  factory FrequenciaDaTurma.fromJson(Map<String, dynamic> json) => FrequenciaDaTurma(
+        turmaId: (json['turma_id'] as num?)?.toInt(),
+        turma: json['turma'] as String,
+        frequencia: Frequencia.fromJson(json),
       );
 }
 

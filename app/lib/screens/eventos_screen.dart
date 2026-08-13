@@ -27,6 +27,7 @@ class _EventosScreenState extends State<EventosScreen> {
 
   /// Só o aluno vê frequência; null enquanto carrega ou se der erro.
   Frequencia? _frequencia;
+  List<FrequenciaDaTurma> _porTurma = [];
 
   @override
   void initState() {
@@ -39,7 +40,12 @@ class _EventosScreenState extends State<EventosScreen> {
     if (context.read<AuthProvider>().perfil?.isProfessor ?? true) return;
     try {
       final f = await UsuariosService.minhaFrequencia();
-      if (mounted) setState(() => _frequencia = f);
+      if (mounted) {
+        setState(() {
+          _frequencia = f.geral;
+          _porTurma = f.turmas;
+        });
+      }
     } catch (_) {
       // Frequência é informativa: se falhar, a lista de eventos continua.
     }
@@ -54,7 +60,7 @@ class _EventosScreenState extends State<EventosScreen> {
     final avisos = <Widget>[
       if (cancelamentos != null) cancelamentos,
       if (_frequencia != null && !_frequencia!.semAulas)
-        _CardFrequencia(frequencia: _frequencia!),
+        _CardFrequencia(frequencia: _frequencia!, porTurma: _porTurma),
     ];
     if (avisos.isEmpty) return null;
     return Column(children: avisos);
@@ -279,14 +285,34 @@ class _LinhaEvento extends StatelessWidget {
 
 /// Resumo de presença do aluno. Verde/laranja/vermelho seguem a régua
 /// acadêmica usual: 75% é o piso pra aprovação por frequência.
+/// Frequência do aluno: uma linha por disciplina.
+///
+/// A versão anterior mostrava só o total somado, e isso é academicamente
+/// sem sentido — reprovação por falta é POR disciplina. Alguém com 80% no
+/// agregado pode estar com 50% numa matéria, e o card dizia que estava tudo
+/// bem. Agora o número grande é o da pior disciplina, que é a que exige
+/// atenção; o resto vem listado embaixo.
 class _CardFrequencia extends StatelessWidget {
   final Frequencia frequencia;
+  final List<FrequenciaDaTurma> porTurma;
 
-  const _CardFrequencia({required this.frequencia});
+  const _CardFrequencia({required this.frequencia, required this.porTurma});
+
+  /// A disciplina em pior situação — e é ela que decide o semestre.
+  FrequenciaDaTurma? get _pior {
+    final comAula = porTurma.where((t) => !t.frequencia.semAulas).toList();
+    if (comAula.isEmpty) return null;
+    comAula.sort((a, b) =>
+        (a.frequencia.percentual ?? 100).compareTo(b.frequencia.percentual ?? 100));
+    return comAula.first;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final pct = frequencia.percentual ?? 0;
+    final cores = Theme.of(context).colorScheme;
+    final pior = _pior;
+    final destaque = pior?.frequencia ?? frequencia;
+    final pct = destaque.percentual ?? 0;
     final cor = corDaFrequencia(context, pct);
 
     return Card(
@@ -300,7 +326,7 @@ class _CardFrequencia extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Sua frequência',
+                    pior == null ? 'Sua frequência' : 'Sua frequência em ${pior.turma}',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
@@ -314,19 +340,69 @@ class _CardFrequencia extends StatelessWidget {
                 value: pct / 100,
                 minHeight: 7,
                 color: cor,
-                backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                backgroundColor: cores.surfaceContainerHighest,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              '${frequencia.presencas} de ${frequencia.total} '
-              '${frequencia.total == 1 ? 'aula' : 'aulas'}'
-              '${frequencia.faltas > 0 ? ' · ${frequencia.faltas} '
-                  '${frequencia.faltas == 1 ? 'falta' : 'faltas'}' : ''}',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              _resumo(destaque),
+              style: TextStyle(color: cores.onSurfaceVariant),
             ),
+            // O aviso que faz o número virar decisão. Só aparece quando
+            // ainda dá pra agir - avisar cedo demais ensina a ignorar.
+            if (destaque.reprovadoPorFalta || destaque.noLimite) ...[
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.error_outline, size: 16, color: cor),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      destaque.reprovadoPorFalta
+                          ? 'Você passou do limite de faltas desta disciplina.'
+                          : destaque.faltasRestantes == 0
+                              ? 'Mais uma falta e você reprova por frequência.'
+                              : 'Você ainda pode faltar 1 vez nesta disciplina.',
+                      style: TextStyle(fontSize: 12.5, color: cor),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (porTurma.length > 1) ...[
+              const Divider(height: 22),
+              ...porTurma.map((t) => _linhaTurma(context, t)),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  String _resumo(Frequencia f) {
+    final aulas = '${f.presencas} de ${f.total} ${f.total == 1 ? 'aula' : 'aulas'}';
+    if (f.reprovadoPorFalta) return '$aulas · ${f.faltas} faltas';
+    return '$aulas · pode faltar mais ${f.faltasRestantes}';
+  }
+
+  Widget _linhaTurma(BuildContext context, FrequenciaDaTurma t) {
+    final f = t.frequencia;
+    final pct = f.percentual;
+    final cor = corDaFrequencia(context, pct ?? 100);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 7),
+      child: Row(
+        children: [
+          Expanded(child: Text(t.turma, style: const TextStyle(fontSize: 13.5))),
+          Text(
+            // Sem aula encerrada não há percentual: "0%" pareceria péssima
+            // frequência em vez de "ainda não começou".
+            pct == null ? '—' : '$pct%',
+            style: Tipos.dado(context).copyWith(color: pct == null ? null : cor),
+          ),
+        ],
       ),
     );
   }

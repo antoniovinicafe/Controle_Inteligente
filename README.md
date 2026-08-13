@@ -29,7 +29,7 @@ sai do prédio. É a limitação principal do sistema hoje — ver
 
 | Pasta | O que é |
 |---|---|
-| [`app/`](app/) | Aplicativo Flutter. Professor cria turmas e aulas e acompanha quem entrou; aluno vê suas aulas e sua presença. |
+| [`app/`](app/) | Aplicativo Flutter. Professor cria turmas e aulas e acompanha quem entrou; aluno vê suas aulas e quantas faltas ainda cabem em cada disciplina. |
 | [`api/`](api/) | Servidor Flask. Valida o token, calcula o vetor do rosto e decide se libera. É onde mora toda a regra de negócio. |
 | [`api/raspberry/`](api/raspberry/) | Código que roda na Raspberry Pi da porta: captura da câmera e a tela do totem (LIBERADO / NEGADO). |
 
