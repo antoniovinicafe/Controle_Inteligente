@@ -22,8 +22,12 @@ até o do reconhecimento, a segunda foto de todo mundo passa a ser recusada.
 
 O que esta checagem NÃO cobre, de propósito: a primeira captura da conta,
 que não tem irmã com que se comparar. Cadastrar o rosto de um colega ainda
-não cadastrado continua possível na foto inicial - quem barra esse caso é a
-captura obrigatoriamente ao vivo (sem galeria), não isto aqui.
+não cadastrado continua possível na foto inicial, e nenhuma das barreiras
+pega esse caso - a captura ao vivo garante que a foto é do momento, não de
+quem. É limitação conhecida e decidida, não descuido: fechá-la exige
+confirmação de fora do sistema (um professor aprovando a primeira foto), e
+o porquê de não construir isso está no README da raiz, em "A limitação que
+sobra: a primeira foto".
 
 Não tocam no banco: reproduzem a aritmética de distância de cosseno do
 operador `<=>` do pgvector, igual test_multiplos_rostos.py.

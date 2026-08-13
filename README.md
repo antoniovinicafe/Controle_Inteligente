@@ -87,7 +87,34 @@ aconteceu em 13/08/2026 — a medição achou, entre as 5 capturas de um
 aluno, uma a 0,895 de todas as outras. Um vetor desses não atrapalha o
 dono, mas fica no banco como uma chave a mais capaz de abrir a porta no
 nome dele. A primeira foto da conta segue sem essa proteção, por não ter
-com o que se comparar.
+com o que se comparar — é a limitação conhecida descrita abaixo.
+
+### A limitação que sobra: a primeira foto
+
+As três regras acima protegem tudo, **menos a primeira captura de uma
+conta**. O ataque que continua possível é este:
+
+> Cadastro o rosto de um colega que nunca se cadastrou, com ele ali do meu
+> lado. Ele chega na porta, o leitor acha o vetor mais próximo — que está
+> na minha conta — e marca **a mim** como presente. Ele consta ausente.
+
+Nenhuma das barreiras pega esse caso, e vale entender por quê. A
+vivacidade só confirma que é gente presente, e é: o colega está ali. A
+captura ao vivo, sem galeria, só garante que a foto é do momento — não de
+quem. "Um rosto pertence a uma conta só" compara com quem **já está**
+cadastrado, e ele não está. E a regra nova compara com as outras fotos da
+própria conta, que na primeira não existem.
+
+**Não há solução puramente técnica.** O servidor não tem como saber de
+quem é um rosto que está vendo pela primeira vez — não existe nada com que
+comparar. Fechar isso exige uma confirmação de fora do sistema: a primeira
+captura de cada conta ficar pendente até um professor aprovar.
+
+Foi decidido **não** construir isso: custa uma tela nova pro professor e
+um estado a mais no cadastro, e o proveito da fraude é baixo perto do
+risco de fazê-la — quem tenta precisa da colaboração presencial da pessoa
+que vai ficar marcada como ausente, e é ela quem reclama no fim do mês.
+Fica registrado aqui como limitação conhecida, e não como descuido.
 
 Cada pessoa pode guardar até 5 capturas (luz, ângulo, óculos). A busca
 compara contra a mais próxima delas, o que cobre a variação real sem
