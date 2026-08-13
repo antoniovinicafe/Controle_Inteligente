@@ -137,6 +137,13 @@ class _TurmaDetailScreenState extends State<TurmaDetailScreen> {
                 aluno.frequencia.semAulas
                     ? 'sem aulas ainda'
                     : '${aluno.frequencia.presencas}/${aluno.frequencia.total} aulas',
+                // O que o professor consegue usar: não "está com 62%", mas
+                // "ainda pode faltar 1". É o aviso que chega a tempo de a
+                // conversa com o aluno resolver alguma coisa.
+                if (aluno.frequencia.reprovadoPorFalta)
+                  'passou do limite'
+                else if (aluno.frequencia.noLimite)
+                  'pode faltar ${aluno.frequencia.faltasRestantes}',
               ].join(' · '),
               style: Tipos.dado(context),
               maxLines: 1,
@@ -173,6 +180,11 @@ class _TurmaDetailScreenState extends State<TurmaDetailScreen> {
 
 /// Percentual de presença do aluno, com a cor dizendo se está em risco.
 /// 75% é o piso acadêmico usual pra aprovação por frequência.
+///
+/// Quem já passou do limite de faltas ganha um ponto ao lado: o percentual
+/// sozinho não distingue "62% em fevereiro, ainda dá pra recuperar" de "62%
+/// e não cabe mais falta nenhuma", e essas duas situações pedem conversas
+/// diferentes.
 class _SeloFrequencia extends StatelessWidget {
   final Frequencia frequencia;
 
@@ -183,7 +195,14 @@ class _SeloFrequencia extends StatelessWidget {
     if (frequencia.semAulas) return const SizedBox.shrink();
 
     final pct = frequencia.percentual ?? 0;
-    return Selo(texto: '$pct%', cor: corDaFrequencia(context, pct));
+    final selo = Selo(texto: '$pct%', cor: corDaFrequencia(context, pct));
+    if (!frequencia.reprovadoPorFalta) return selo;
+
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.error, size: 13, color: CoresStatus.erro(context)),
+      const SizedBox(width: 5),
+      selo,
+    ]);
   }
 }
 

@@ -182,8 +182,6 @@ def excluir_evento(evento_id):
 
     return jsonify({"ok": True})
 
-    return jsonify(evento)
-
 
 # ------------------------------------------------------------
 # Participantes
@@ -273,6 +271,19 @@ def convidar_participantes(evento_id):
 @bp.route("/<int:evento_id>/participantes", methods=["GET"])
 @login_required
 def listar_participantes(evento_id):
+    """
+    A lista de presença da aula.
+
+    Cada linha traz também a primeira e a última vez que a porta liberou
+    aquela pessoa nesta aula. É o mais perto de "permanência" que dá pra
+    afirmar sem inventar hardware: o sistema sabe quando viu, não quando a
+    pessoa saiu. Quem entra e não passa mais na frente da câmera tem uma
+    leitura só — o professor vê "entrou 19:05" e nada além, que é
+    exatamente o que se sabe.
+
+    Sai tudo do access_logs, que já registrava cada leitura. Nenhuma tabela
+    nova, nenhum fluxo novo pra ninguém aprender.
+    """
     conn = get_conn()
     try:
         with conn.cursor() as cur:
@@ -283,9 +294,25 @@ def listar_participantes(evento_id):
                        -- sem rosto cadastrado o Raspberry Pi nunca reconhece
                        -- essa pessoa: o professor precisa saber de antemão
                        -- quem vai depender de liberação manual.
-                       exists (select 1 from faces f where f.usuario_id = p.id) as tem_rosto
+                       exists (select 1 from faces f where f.usuario_id = p.id) as tem_rosto,
+                       -- Primeira e última vez que a porta liberou esta
+                       -- pessoa nesta aula. Sai do access_logs, que já
+                       -- guardava tudo isso: nenhuma tabela nova, nenhum
+                       -- fluxo novo.
+                       leituras.primeira_leitura,
+                       leituras.ultima_leitura,
+                       leituras.total as leituras
                 from evento_participantes ep
                 join profiles p on p.id = ep.usuario_id
+                left join lateral (
+                    select min(al.criado_em) as primeira_leitura,
+                           max(al.criado_em) as ultima_leitura,
+                           count(*) as total
+                    from access_logs al
+                    where al.evento_id = ep.evento_id
+                      and al.usuario_id = ep.usuario_id
+                      and al.status = 'liberado'
+                ) leituras on true
                 where ep.evento_id = %s
                 order by p.nome
                 """,

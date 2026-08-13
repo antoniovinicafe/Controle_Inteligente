@@ -671,6 +671,15 @@ class _AbaParticipantes extends StatelessWidget {
             [
               if (p.matricula != null && p.matricula!.isNotEmpty) p.matricula!,
               p.origem == 'turma' ? 'via turma' : 'manual',
+              // Quando a porta viu a pessoa mais de uma vez, dá pra dizer
+              // por quanto tempo ela esteve por perto. Com uma leitura só,
+              // a hora da entrada é tudo que se sabe — e é o que se diz.
+              // "Saiu" seria invenção: ninguém é lido ao ir embora.
+              if (p.temPermanencia)
+                '${formatarHora(p.primeiraLeitura!)}→${formatarHora(p.ultimaLeitura!)}'
+                    ' · ${_duracao(p.permanencia!)}'
+              else if (p.liberadoEm != null)
+                'entrou ${formatarHora(p.liberadoEm!)}',
             ].join(' · '),
             style: Tipos.dado(context),
           ),
@@ -694,6 +703,14 @@ class _AbaParticipantes extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// "1h20" / "45min". Sem segundos: a precisão que o dado tem é a da
+  /// passagem pela porta, não a do relógio.
+  static String _duracao(Duration d) {
+    if (d.inHours == 0) return '${d.inMinutes}min';
+    final min = d.inMinutes % 60;
+    return min == 0 ? '${d.inHours}h' : '${d.inHours}h${min.toString().padLeft(2, '0')}';
   }
 }
 
