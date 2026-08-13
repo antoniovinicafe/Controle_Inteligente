@@ -69,10 +69,10 @@ FONTE_DISPLAY = "/usr/share/fonts/opentype/urw-base35/URWGothic-Demi.otf"
 FONTE_TEXTO = "/usr/share/fonts/truetype/nunito-sans/NunitoSans-VariableFont_YTLC,opsz,wdth,wght.ttf"
 FONTE_DADOS = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
-# ponytail: layout fixo em 1080p. Um mini display HDMI de 7" costuma ser
-# 1024x600 ou 800x480 - quando o monitor definitivo chegar, tornar estes
-# números proporcionais à altura real (pygame.display.Info()) em vez de
-# reescrevê-los à mão.
+# Tamanho de PROJETO, não da tela. Todo o layout abaixo é escrito nestas
+# coordenadas e a classe Tela encaixa o resultado na resolução real (ver
+# _apresentar), então um mini display de 7" - 1024x600, 800x480 - mostra o
+# mesmo desenho sem que nenhum número aqui mude.
 LARGURA, ALTURA = 1920, 1080
 VP_L, VP_A = 456, 608                 # retrato 3:4, proporção de foto 3x4
 VP_X, VP_Y = (LARGURA - VP_L) // 2, 128
@@ -234,10 +234,28 @@ class Tela:
         self.sala = sala.upper()
         pygame.init()
         pygame.mouse.set_visible(tela_cheia is False)
+        # O layout é escrito em coordenadas de 1920x1080 e só no último
+        # passo encaixa na tela real. Assim o mini display de 7" (1024x600
+        # ou 800x480) e um monitor grande recebem o mesmo desenho, sem uma
+        # coordenada sair do lugar. Antes o modo de vídeo era pedido em
+        # 1080p fixo: numa tela menor o veredito caía fora da área visível.
         self.superficie = pygame.display.set_mode(
-            (LARGURA, ALTURA), pygame.FULLSCREEN if tela_cheia else 0
+            (0, 0) if tela_cheia else (LARGURA // 2, ALTURA // 2),
+            pygame.FULLSCREEN if tela_cheia else 0,
         )
         pygame.display.set_caption("Fetin - Controle de acesso")
+
+        # Tudo é desenhado aqui, no tamanho de projeto.
+        self.tela = pygame.Surface((LARGURA, ALTURA))
+
+        # Encaixe proporcional, com sobra preta quando a tela tem outro
+        # formato. Esticar deformaria o rosto no preview - que é justamente
+        # o que a pessoa usa pra se enquadrar na câmera.
+        larg_real, alt_real = self.superficie.get_size()
+        escala = min(larg_real / LARGURA, alt_real / ALTURA)
+        self._destino = pygame.Rect(0, 0, int(LARGURA * escala), int(ALTURA * escala))
+        self._destino.center = (larg_real // 2, alt_real // 2)
+        self._escalar = self._destino.size != (LARGURA, ALTURA)
 
         self.f_display = pygame.font.Font(FONTE_DISPLAY, 96)
         self.f_nome = pygame.font.Font(FONTE_TEXTO, 38)
@@ -245,9 +263,25 @@ class Tela:
         self.f_dados = pygame.font.Font(FONTE_DADOS, 17)
         self.f_micro = pygame.font.Font(FONTE_DADOS, 13)
 
+    def _apresentar(self):
+        """Joga o desenho de 1920x1080 na tela real, seja ela qual for."""
+        if self._escalar:
+            self.superficie.fill((0, 0, 0))
+            self.superficie.blit(
+                # ponytail: reescala o quadro inteiro toda vez. Num display
+                # de 7" custa alguns milissegundos por quadro e o totem
+                # desenha devagar de propósito - se um dia pesar, o caminho
+                # é desenhar direto na escala, não voltar pro tamanho fixo.
+                pygame.transform.smoothscale(self.tela, self._destino.size),
+                self._destino,
+            )
+        else:
+            self.superficie.blit(self.tela, (0, 0))
+        pygame.display.flip()
+
     def _centralizado(self, texto, fonte, cor, y):
         img = fonte.render(texto, True, cor)
-        self.superficie.blit(img, img.get_rect(center=(LARGURA // 2, y)))
+        self.tela.blit(img, img.get_rect(center=(LARGURA // 2, y)))
 
     def _cantoneiras(self, cor):
         """
@@ -259,8 +293,8 @@ class Tela:
         x1, y1 = VP_X + VP_L + folga, VP_Y + VP_A + folga
         for cx, cy, dx, dy in ((x0, y0, 1, 1), (x1, y0, -1, 1),
                                (x0, y1, 1, -1), (x1, y1, -1, -1)):
-            pygame.draw.line(self.superficie, cor, (cx, cy), (cx + dx * braco, cy), esp)
-            pygame.draw.line(self.superficie, cor, (cx, cy), (cx, cy + dy * braco), esp)
+            pygame.draw.line(self.tela, cor, (cx, cy), (cx + dx * braco, cy), esp)
+            pygame.draw.line(self.tela, cor, (cx, cy), (cx, cy + dy * braco), esp)
 
     def _trilha(self, etapa_falha, liberado):
         """
@@ -286,13 +320,13 @@ class Tela:
             else:
                 cor, cor_txt = PLACA, APAGADO
 
-            pygame.draw.rect(self.superficie, cor, (x, y, larg, alt), border_radius=3)
+            pygame.draw.rect(self.tela, cor, (x, y, larg, alt), border_radius=3)
             img = self.f_micro.render(rotulo, True, cor_txt)
-            self.superficie.blit(img, img.get_rect(midtop=(x + larg // 2, y + 14)))
+            self.tela.blit(img, img.get_rect(midtop=(x + larg // 2, y + 14)))
             x += larg + gap
 
     def desenhar(self, retrato, estado, resultado, aviso_rede):
-        s = self.superficie
+        s = self.tela
         s.fill(CAMPO)
 
         # Cabeçalho: quem é esta porta, e que horas são. Mono porque é
@@ -348,7 +382,7 @@ class Tela:
             img = self.f_dados.render("Sem conexão com o servidor", True, CORAL)
             s.blit(img, img.get_rect(center=(LARGURA // 2, Y_AVISO)))
 
-        pygame.display.flip()
+        self._apresentar()
 
 
 # ------------------------------------------------------------
