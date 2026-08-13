@@ -89,7 +89,7 @@ por papel.
 | `POST/GET/PATCH/DELETE /eventos`, participantes, liberar manual, logs | professor/admin (dono ou admin) |
 | `POST/GET/DELETE /recorrencias` | professor/admin (dono ou admin) |
 | `POST/GET/PATCH/DELETE /dispositivos`, rotação de chave | professor/admin |
-| `POST/GET/DELETE /faces` | o próprio usuário, sobre o próprio rosto |
+| `POST/GET/DELETE /faces`, `DELETE /faces/<id>` | o próprio usuário, sobre o próprio rosto |
 | `POST /faces/recognize` | a Raspberry, por `X-Device-Key` — **não** por JWT |
 
 ## Decisões que não são óbvias no código

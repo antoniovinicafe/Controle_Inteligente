@@ -116,6 +116,13 @@ risco de fazê-la — quem tenta precisa da colaboração presencial da pessoa
 que vai ficar marcada como ausente, e é ela quem reclama no fim do mês.
 Fica registrado aqui como limitação conhecida, e não como descuido.
 
+Na tela de rosto do aplicativo cada captura aparece com a hora em que foi
+feita e pode ser removida sozinha, sem apagar as outras. Não há miniatura
+porque não há imagem: o servidor extrai o vetor e descarta a foto. O que
+permite escolher qual remover é o aviso **"não parece as suas outras
+fotos"**, calculado no servidor pelo mesmo critério que recusa uma captura
+nova — sem ele seriam cinco linhas idênticas com horários diferentes.
+
 Cada pessoa pode guardar até 5 capturas (luz, ângulo, óculos). A busca
 compara contra a mais próxima delas, o que cobre a variação real sem
 afrouxar o limiar — capturas a mais não aproximam um estranho.
@@ -221,9 +228,3 @@ O que falta:
   medida de 3 pessoas — vale remedir a cada leva de cadastros, e é pra isso
   que o `medir_rostos.py` existe.
 
-- **Não dá pra apagar UMA captura.** O `DELETE /faces` apaga todas as da
-  pessoa — não existe rota nem botão pra remover uma só. Depois de 13/08 o
-  cadastro barra na entrada a captura que não parece o rosto de quem a
-  envia (ver "O que impede a burla"), então o caso que motivou isto não
-  deve se repetir; mas se entrar alguma por outro motivo, a única saída
-  continua sendo apagar todas e cadastrar de novo.

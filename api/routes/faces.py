@@ -214,6 +214,91 @@ def status_cadastro():
     })
 
 
+@bp.route("", methods=["GET"])
+@login_required
+def listar_rostos():
+    """
+    As capturas do usuário logado, da mais antiga pra mais nova.
+
+    Nunca devolve o embedding: é o dado biométrico em si, e a tela não tem
+    o que fazer com ele.
+
+    Já `distancia_irma` - o quanto cada captura se parece com a mais
+    próxima das outras da mesma pessoa - vai junto por necessidade. A foto
+    nunca é guardada, então a tela não tem imagem pra mostrar: sem esse
+    número, escolher qual apagar seria escolher entre cinco linhas
+    idênticas com horários diferentes. Com ele, a captura que não pertence
+    àquele rosto se denuncia.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select f.id, f.modelo, f.atualizado_em,
+                       (select min(o.embedding <=> f.embedding)
+                        from faces o
+                        where o.usuario_id = f.usuario_id and o.id <> f.id)
+                       as distancia_irma
+                from faces f
+                where f.usuario_id = %s
+                order by f.atualizado_em
+                """,
+                (g.user_id,),
+            )
+            capturas = [dict(c) for c in cur.fetchall()]
+    finally:
+        put_conn(conn)
+
+    for c in capturas:
+        # Mesmo critério do cadastro, e de propósito: o que não entraria
+        # hoje é o que a tela sugere remover.
+        c["estranha"] = (
+            c["distancia_irma"] is not None and not e_o_mesmo_rosto(c["distancia_irma"])
+        )
+
+    return jsonify({
+        "total": len(capturas),
+        "maximo": MAX_FOTOS_POR_PESSOA,
+        "capturas": capturas,
+    })
+
+
+@bp.route("/<int:captura_id>", methods=["DELETE"])
+@login_required
+def remover_captura(captura_id):
+    """
+    Apaga UMA captura, sem mexer nas outras.
+
+    Existe por causa de 13/08/2026: apareceu na conta de um aluno um vetor
+    a 0,895 de todas as outras dele, que não era o rosto dele. Não dava pra
+    tirar só aquele - a única saída era apagar as cinco e recomeçar.
+
+    O `usuario_id` no where não é enfeite ao lado do id: sem ele, qualquer
+    pessoa logada apagaria a captura de qualquer outra só passando o
+    número.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "delete from faces where id = %s and usuario_id = %s",
+                (captura_id, g.user_id),
+            )
+            apagou = cur.rowcount
+        conn.commit()
+    finally:
+        put_conn(conn)
+
+    if not apagou:
+        # 404 mesmo quando a captura existe e é de outra pessoa: responder
+        # 403 confirmaria que aquele id existe, o que transforma a rota num
+        # consultor de quem tem rosto cadastrado.
+        return jsonify({"erro": "Captura não encontrada"}), 404
+
+    return jsonify({"ok": True})
+
+
 @bp.route("", methods=["DELETE"])
 @login_required
 def remover_rosto():

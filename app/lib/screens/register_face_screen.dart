@@ -7,11 +7,19 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../config/tema.dart';
 import '../services/api_client.dart';
+import '../services/faces_service.dart';
 import '../utils/formatters.dart';
 
-/// Cadastro do rosto do usuário logado (o backend só guarda 1 rosto
-/// por usuário, sempre associado ao dono do token JWT - por isso não
-/// existe seletor de usuário aqui).
+/// Cadastro do rosto do usuário logado - sempre o dono do token JWT, por
+/// isso não existe seletor de usuário aqui. São até 5 capturas por pessoa,
+/// em condições diferentes (luz, ângulo, óculos), e a porta compara contra
+/// a mais próxima delas.
+///
+/// A lista de capturas não tem miniatura, e isso não é omissão: o servidor
+/// extrai o vetor e descarta a foto, então não existe imagem pra mostrar. O
+/// que identifica cada uma é a hora — e o aviso, quando o servidor achou que
+/// aquela captura não parece as outras da pessoa. Sem esse aviso, escolher
+/// qual remover seria escolher entre linhas idênticas.
 ///
 /// Esta tela tinha um visual próprio - ciano neon sobre quase-preto, fonte
 /// Rajdhani, linha de scanner animada, moldura com cantos de mira. Ficava
@@ -40,6 +48,8 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
   int _totalFotos = 0;
   String? _atualizadoEm;
   bool _statusLoading = true;
+  List<Captura> _capturas = [];
+  int? _removendo;
 
   CameraController? _camCtrl;
   List<CameraDescription> _cameras = [];
@@ -64,12 +74,14 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
   Future<void> _loadStatus() async {
     setState(() => _statusLoading = true);
     try {
-      final json = await ApiClient.get('/faces/status');
-      final detalhe = json['detalhe'] as Map<String, dynamic>?;
+      // Uma requisição só: a lista já diz quantas são e quando foi a
+      // última, então não faz sentido perguntar /faces/status junto.
+      final capturas = await FacesService.listar();
       setState(() {
-        _cadastrado = json['cadastrado'] == true;
-        _totalFotos = (json['total'] as num?)?.toInt() ?? (_cadastrado ? 1 : 0);
-        _atualizadoEm = detalhe?['atualizado_em']?.toString();
+        _capturas = capturas;
+        _cadastrado = capturas.isNotEmpty;
+        _totalFotos = capturas.length;
+        _atualizadoEm = capturas.isEmpty ? null : capturas.last.quando?.toIso8601String();
       });
     } catch (_) {
       // sem conexão / erro - mantém estado anterior
@@ -208,6 +220,57 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
       ),
     );
     if (confirmado == true) await _deleteFace();
+  }
+
+  Future<void> _confirmDeleteCaptura(Captura captura) async {
+    final ultima = _capturas.length == 1;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Remover esta foto?'),
+        content: Text(
+          ultima
+              ? 'É a sua única foto. Sem nenhuma, a porta deixa de reconhecer '
+                  'você e sua presença passa a depender da lista manual.'
+              : captura.estranha
+                  ? 'Esta foto não parece as suas outras. Removê-la deixa o '
+                      'reconhecimento mais confiável; as demais continuam valendo.'
+                  : 'As suas outras fotos continuam valendo. Quanto mais '
+                      'condições diferentes cadastradas, melhor a porta te '
+                      'reconhece.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: CoresStatus.erro(context),
+              minimumSize: const Size(0, 44),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remover'),
+          ),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
+
+    setState(() {
+      _removendo = captura.id;
+      _errorMsg = null;
+    });
+    try {
+      await FacesService.remover(captura.id);
+      await _loadStatus();
+    } on ApiException catch (e) {
+      _showError(e.mensagem);
+    } catch (e) {
+      _showError('Erro inesperado: $e');
+    } finally {
+      if (mounted) setState(() => _removendo = null);
+    }
   }
 
   @override
@@ -383,11 +446,76 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
               TextButton(
                 onPressed: _confirmDelete,
                 style: TextButton.styleFrom(foregroundColor: CoresStatus.erro(context)),
-                child: const Text('Remover'),
+                child: Text(_totalFotos > 1 ? 'Remover todas' : 'Remover'),
               ),
           ],
         ),
+        if (_capturas.length > 1) ...[
+          const SizedBox(height: 14),
+          ..._capturas.map(_linhaCaptura),
+        ],
       ],
+    );
+  }
+
+  /// Uma captura na lista.
+  ///
+  /// Não tem miniatura porque não existe imagem pra mostrar: o servidor
+  /// guarda só o vetor e descarta a foto. O que identifica cada uma é a
+  /// hora — e, quando o servidor achou que ela não parece as outras, o
+  /// aviso. Sem esse aviso, escolher qual apagar seria escolher entre
+  /// linhas iguais.
+  Widget _linhaCaptura(Captura captura) {
+    final cores = Theme.of(context).colorScheme;
+    final coral = CoresStatus.erro(context);
+    final removendo = _removendo == captura.id;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          Icon(
+            captura.estranha ? Icons.error_outline : Icons.check_circle_outline,
+            size: 17,
+            color: captura.estranha ? coral : cores.outline,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  captura.quando == null
+                      ? 'Foto ${captura.id}'
+                      : formatarDataHora(captura.quando!.toLocal()),
+                  style: Tipos.dado(context),
+                ),
+                if (captura.estranha) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Não parece as suas outras fotos',
+                    style: TextStyle(fontSize: 12.5, color: coral),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (removendo)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            IconButton(
+              onPressed: _removendo == null ? () => _confirmDeleteCaptura(captura) : null,
+              icon: const Icon(Icons.close, size: 18),
+              color: cores.outline,
+              tooltip: 'Remover esta foto',
+              visualDensity: VisualDensity.compact,
+            ),
+        ],
+      ),
     );
   }
 }
