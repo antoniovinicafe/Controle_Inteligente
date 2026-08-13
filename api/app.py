@@ -44,7 +44,24 @@ if __name__ == "__main__":
     #
     # Pra voltar ao modo de desenvolvimento (reload automático a cada
     # save), rode: python app.py --dev
+    import socket
     import sys
+
+    # No Windows dois servidores "sobem" na mesma porta sem reclamar: o
+    # waitress abre o socket com SO_REUSEADDR e o segundo processo segue em
+    # frente imprimindo que está no ar - mas quem responde continua sendo o
+    # PRIMEIRO. O sintoma é cruel de depurar: você muda o código, reinicia,
+    # e o comportamento não muda; a Raspberry segue conversando com o
+    # servidor velho carregado em memória há horas.
+    with socket.socket() as s:
+        s.settimeout(0.5)
+        if s.connect_ex(("127.0.0.1", Config.PORT)) == 0:
+            sys.exit(
+                f"Já tem alguém respondendo na porta {Config.PORT} - "
+                "provavelmente um Fetin API antigo.\n"
+                "  Pare ele primeiro (Ctrl+C na janela dele) ou ache quem é:\n"
+                f"      netstat -ano | findstr :{Config.PORT}"
+            )
 
     if "--dev" in sys.argv:
         app.run(host="0.0.0.0", port=Config.PORT, debug=True)
