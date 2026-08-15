@@ -22,16 +22,37 @@ MODELO = "Facenet512"  # gera vetor de 512 posições (bate com o schema.sql)
 # direito de entrar, que é a falha cara aqui - a pessoa fica parada na
 # frente da porta sem saber o que fazer.
 #
-# Com o limiar, a recusa só vale quando o modelo está convicto. 0.75 = "só
-# nega se estiver 75% certo de que é fraude"; entre 33% e 75% a pessoa
-# passa. Ajuste em ANTISPOOF_LIMIAR no .env: mais baixo aperta (barra
-# mais), mais alto afrouxa, acima de 1.0 desliga na prática.
+# Com o limiar, a recusa só vale quando o modelo está convicto. 0.60 = "só
+# nega se estiver 60% certo de que é fraude". Ajuste em ANTISPOOF_LIMIAR no
+# .env: mais baixo aperta (barra mais), mais alto afrouxa, acima de 1.0
+# desliga na prática.
 #
-# ponytail: número escolhido no olho, não medido com a câmera do Pi. A
-# mensagem de recusa carrega a certeza do modelo justamente pra calibrar
-# com os números reais - erguer uma foto na frente da câmera algumas
-# vezes, ver quanto dá, e ajustar o .env com isso na mão.
-LIMIAR_FALSIDADE = float(os.environ.get("ANTISPOOF_LIMIAR", "0.75"))
+# O número saiu de medição na porta, em 15/08/2026, e a história de como
+# chegou aqui importa mais que ele:
+#
+#   com a câmera em 640x480, uma pessoa de verdade foi chamada de foto a
+#   77%, 82% e 86%, e uma FOTO marcou 40% - as faixas se sobrepunham e
+#   NENHUM limiar separava. Foi assim que uma foto abriu a porta com o
+#   limiar em 0.90.
+#
+#   dobrando a captura pra 1280x720 (ver raspberry/totem.py), as faixas se
+#   separaram: pessoa acusada de falsa a 43% e 58%, fotos a 68%, 99% e
+#   100%. 0.60 fica no vão, encostado no limite de baixo de propósito -
+#   foto entrando é falha de segurança, pessoa barrada é um segundo de
+#   espera e a porta lê de novo.
+#
+# O que consertou não foi ajuste fino, foi resolução: o MiniFASNet decide
+# por textura de pele num recorte de 80x80, e num rosto de ~100px não havia
+# textura pra ver.
+#
+# ponytail: são poucas observações de cada lado, e o modelo é sensível ao
+# ambiente. Toda leitura sai no console (`[vivacidade] ...`), então numa
+# sala nova o certo é olhar os números de lá, não repetir estes.
+#
+# E uma assimetria que o limiar NÃO cobre: quando o modelo diz "pessoa"
+# sobre uma foto, nenhum valor aqui a barra - o limiar só decide quando
+# NEGAR. Contra esse caso só melhora de imagem ou de modelo.
+LIMIAR_FALSIDADE = float(os.environ.get("ANTISPOOF_LIMIAR", "0.60"))
 
 
 # Distância de cosseno máxima pra considerar que é a mesma pessoa.

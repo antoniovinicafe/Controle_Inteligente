@@ -64,11 +64,28 @@ inteiro. O MiniFASNet devolve três probabilidades (foto impressa, pessoa
 real, tela) e o padrão do DeepFace nega sempre que "real" não é a maior —
 decisão no voto de minerva, que barra gente de verdade em luz ruim, de
 lado ou longe da câmera. Aqui a recusa só vale quando o modelo está
-convicto: `ANTISPOOF_LIMIAR` no `.env` da API, 0.75 por padrão. Baixar
-aperta, subir afrouxa. Medido na porta em 13/08/2026: pessoa presente
-99–100%, foto erguida 99% — sobra bastante espaço dos dois lados da linha.
-Toda leitura sai no console do servidor (`[vivacidade] pessoa (99% de
-certeza, limiar 75%)`), então recalibrar é olhar os números, não chutar.
+convicto: `ANTISPOOF_LIMIAR` no `.env` da API, **0.60**, medido.
+
+Como esse número foi parar aí é a parte que interessa. Com a câmera da
+porta em 640x480, uma pessoa de verdade foi acusada de ser foto a 77%, 82%
+e 86% — e uma **foto** marcou 40%. As faixas se sobrepunham, ou seja,
+**nenhum limiar separava**: foi assim que uma foto abriu a porta durante um
+teste em 15/08/2026. Dobrando a captura para 1280x720, as faixas se
+separaram — pessoa acusada de falsa no máximo a 58%, fotos a 68%, 99% e
+100% — e 0.60 cabe no vão, encostado no limite de baixo de propósito: foto
+entrando é falha de segurança, pessoa barrada é um segundo de espera, e a
+porta lê de novo.
+
+O que consertou não foi ajuste fino de limiar, foi **resolução**. O
+MiniFASNet julga textura de pele num recorte de 80×80 pixels; num rosto de
+~100 px não havia textura para ver, e ele chutava. Duas lições que valem
+além deste projeto: o reconhecimento se contenta com pouca resolução mas a
+vivacidade não, e **o limiar só decide quando negar** — se o modelo disser
+"pessoa" sobre uma foto, nenhum valor ali a barra.
+
+Toda leitura sai no console do servidor (`[vivacidade] pessoa (91% de
+certeza, limiar 60%)`), então recalibrar numa sala nova é olhar os números
+de lá, não confiar nestes.
 
 **No cadastro**, três regras. A foto tem que ser tirada na hora, sem opção
 de galeria: o anti-spoofing reconhece foto de tela, mas não distingue uma
@@ -163,11 +180,23 @@ checagens de rosto, identidade, aula e lista foram observadas acertando —
 inclusive a mais sutil, alguém **reconhecido** e ainda assim negado por
 não estar na lista daquela aula.
 
-Em 13/08/2026 a **vivacidade** foi medida na porta pela primeira vez, com
-a câmera da Raspberry: pessoa presente saiu entre 99% e 100% de certeza de
-"real", e uma foto erguida na frente da câmera foi negada com 99% de
-certeza de "falso". Contra um limiar de 75%, os dois lados ficam longe da
-linha — não é um empate resolvido por pouco.
+Em 13/08/2026 a **vivacidade** foi medida na porta pela primeira vez, e em
+15/08 remedida numa sala diferente — onde os números foram outros e a
+calibração teve que ser refeita. Ver "O que impede a burla": foi nesse dia
+que uma foto conseguiu abrir a porta, e o conserto veio da resolução da
+câmera, não do limiar.
+
+Em 15/08/2026 o **modo offline** foi provado na porta. Com o servidor sem
+alcançar o Postgres, três leituras foram decididas pela cópia local e
+enfileiradas; quando o banco voltou, subiram sozinhas na leitura seguinte —
+**com o horário original de cada uma**, 19:20:56, 19:21:02 e 19:21:07, e
+não com a hora em que a rede voltou. A presença gravada é a da porta.
+
+No mesmo teste apareceu um defeito que só se vê assim: o servidor **não
+subia** sem banco, porque o pool abria uma conexão no boot. Ou seja, o modo
+offline só salvava se o processo já estivesse de pé — uma queda de luz
+durante o apagão mataria justamente o que existe para sobreviver a ele.
+Corrigido: sobe sem banco e se reconecta sozinho.
 
 No mesmo dia o totem passou a se encaixar em qualquer resolução, e isso
 foi conferido rodando no mini monitor de 7" da porta: o layout continua
@@ -196,12 +225,10 @@ O que falta:
   hora em que a porta decidiu, não a hora do envio. A cópia se renova de
   carona nas leituras que dão certo.
 
-  **Falta a prova em hardware.** Isso nunca rodou com a Raspberry e o
-  cabo de rede na mão: o que existe são 99 testes, incluindo um que sobe
-  a rota e faz a porta inteira funcionar com o banco fingido de
-  inalcançável, e uma comparação contra o Postgres real mostrando que as
-  duas decisões devolvem o mesmo resultado pro mesmo rosto. Isso não
-  substitui puxar o cabo e ver o que acontece.
+  **Provado na porta em 15/08/2026** (ver "Estado"), com a Raspberry
+  lendo rostos e o servidor sem alcançar o Postgres. O que continua sem
+  prova é o caso de a rede cair *no meio* de uma escrita — o teste foi com
+  o banco já fora de alcance, não caindo durante.
 
   O login do app segue dependendo do Supabase Auth de qualquer forma;
   offline vale pra porta, não pra entrar no aplicativo.

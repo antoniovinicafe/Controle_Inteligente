@@ -17,6 +17,7 @@ Uso típico numa rota:
 
 import time
 
+import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 from pgvector.psycopg2 import register_vector
@@ -39,6 +40,32 @@ _sem_banco_ate = 0.0
 
 
 def init_pool():
+    """
+    Abre o pool. Se o banco não responder, NÃO derruba o servidor.
+
+    O pool abre uma conexão já na criação, então com a internet fora isto
+    estourava e o processo inteiro morria no boot - ou seja, o modo offline
+    só salvava a porta se o servidor já estivesse de pé antes da queda. Uma
+    reinicialização durante o apagão (queda de luz, alguém fechando a
+    janela do terminal) matava justamente o que existe pra sobreviver a
+    ele.
+
+    Agora o servidor sobe sem banco, marcado como sem_banco, e a porta
+    trabalha pela cópia local. `get_conn` tenta criar o pool de novo nas
+    chamadas seguintes, então a volta da rede se resolve sozinha.
+    """
+    global _pool
+    if _pool is not None:
+        return
+    try:
+        _abrir_pool()
+    except psycopg2.Error as e:
+        marcar_sem_banco()
+        print(f"[db] banco fora de alcance no boot: {e}", flush=True)
+        print("[db] servidor subindo assim mesmo - a porta decide pela cópia local", flush=True)
+
+
+def _abrir_pool():
     global _pool
     if _pool is None:
         _pool = pool.ThreadedConnectionPool(
@@ -80,7 +107,16 @@ def marcar_com_banco():
 
 def get_conn():
     if _pool is None:
+        # Pode ter falhado no boot; tentar de novo é o que faz o servidor
+        # voltar sozinho quando a rede volta.
         init_pool()
+    if _pool is None:
+        # Erro de psycopg2 de propósito: quem chama já sabe tratar isso como
+        # "banco fora de alcance" e cair pra cópia local. Um erro de outro
+        # tipo viraria 500 na cara de quem está na porta.
+        raise psycopg2.OperationalError(
+            "sem pool: o banco estava fora de alcance quando o servidor subiu"
+        )
     conn = _pool.getconn()
     register_vector(conn)  # permite passar/receber np.array direto como vector
     return conn

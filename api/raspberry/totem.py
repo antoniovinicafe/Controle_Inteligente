@@ -425,8 +425,18 @@ def main():
     from picamera2 import Picamera2
 
     camera = Picamera2()
+    # 1280x720, e não 640x480, por causa do anti-spoofing.
+    #
+    # O reconhecimento se vira com pouca resolução - ele compara geometria
+    # do rosto. A vivacidade não: o MiniFASNet decide olhando TEXTURA de
+    # pele, reflexo e moiré, e recebe um recorte de 80x80 pixels. Saindo de
+    # um rosto de ~100px, esse recorte é quase liso, e o modelo passou a
+    # chutar: em 15/08/2026 a mesma foto marcou 40%, 90%, 95% e 100% de
+    # certeza de fraude em leituras seguidas, e uma pessoa de verdade foi
+    # chamada de foto três vezes. Com as faixas se sobrepondo assim, nenhum
+    # limiar separa - o que falta é informação na imagem, não ajuste fino.
     camera.configure(camera.create_preview_configuration(
-        main={"size": (640, 480), "format": "RGB888"}))
+        main={"size": (1280, 720), "format": "RGB888"}))
     camera.start()
     time.sleep(1.5)
 
