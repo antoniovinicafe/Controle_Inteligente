@@ -1,3 +1,5 @@
+import time
+
 import psycopg2
 from flask import Blueprint, request, jsonify, g
 
@@ -334,6 +336,40 @@ def remover_rosto():
 # pra humano e pode mudar; isto é contrato.
 ETAPAS = ("rosto", "vivacidade", "identidade", "aula", "lista")
 
+# Por quanto tempo uma suspeita forte de fraude continua valendo, mesmo que
+# a leitura seguinte pareça uma pessoa.
+#
+# POR QUE ISTO EXISTE
+# O MiniFASNet oscila. Em 15/08/2026, a MESMA foto erguida na frente da
+# câmera marcou 100% de fraude numa leitura e "pessoa" nas duas seguintes -
+# e "pessoa" é veredito que nenhum limiar barra, porque o limiar só decide
+# quando NEGAR. Quem insistisse com a foto entrava, era só esperar a leitura
+# favorável; a porta pergunta de segundo em segundo.
+#
+# Uma pessoa de verdade, no mesmo dia e na mesma câmera, nunca passou de
+# 58% de suspeita. Então uma leitura acima de 90% não é ruído: é sinal de
+# que tem uma foto na frente da câmera AGORA, e vale pelos próximos
+# segundos, não só pelo quadro em que apareceu.
+#
+# Não fecha o buraco - fecha a janela. Quem insistir muito ainda pode pegar
+# uma sequência limpa; o que some é o "erguer a foto e esperar".
+SEGUNDOS_APOS_SUSPEITA = 12.0
+
+# dispositivo -> quando foi a última suspeita forte.
+# ponytail: dicionário em memória, perde no restart do servidor. É estado
+# de segundos, não de dias, e um restart no meio de uma tentativa de burla
+# é problema que não existe.
+_suspeitas: dict = {}
+
+
+def _marcar_suspeita():
+    _suspeitas[g.dispositivo_id] = time.monotonic()
+
+
+def _sob_suspeita() -> bool:
+    quando = _suspeitas.get(g.dispositivo_id)
+    return quando is not None and (time.monotonic() - quando) < SEGUNDOS_APOS_SUSPEITA
+
 
 def _decidir_no_banco(cur, embedding) -> dict:
     """
@@ -610,11 +646,27 @@ def reconhecer_rosto():
     try:
         embedding = calcular_embedding(imagem_bytes)
     except RostoFalsoError as e:
+        if e.forte:
+            _marcar_suspeita()
         decisao = {"liberado": False, "motivo": str(e), "etapa": "vivacidade"}
     except ValueError as e:
         decisao = {"liberado": False, "motivo": str(e), "etapa": "rosto"}
     else:
         decisao = _decidir(embedding)
+
+        # Passou pela vivacidade, mas há segundos o modelo cravou que tinha
+        # uma foto aqui. Entre acreditar na leitura de agora e na certeza de
+        # 3 segundos atrás, a porta fica com a segunda.
+        if decisao["liberado"] and _sob_suspeita():
+            decisao = {
+                "liberado": False,
+                "motivo": "Foto detectada há instantes - afaste o que está na "
+                          "frente da câmera e tente de novo",
+                "etapa": "vivacidade",
+                "nome": decisao.get("nome"),
+                "usuario_id": decisao.get("usuario_id"),
+                "evento_id": decisao.get("evento_id"),
+            }
 
     _gravar(decisao)
     return jsonify(_corpo(decisao)), 200

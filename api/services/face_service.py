@@ -80,6 +80,13 @@ def e_a_mesma_pessoa(distancia: float) -> bool:
     return distancia <= LIMIAR_DISTANCIA
 
 
+# Acima disto, a suspeita é forte o bastante pra valer pros próximos
+# segundos, e não só pra leitura em que apareceu (ver routes/faces.py).
+# Em 15/08/2026, com a câmera em 720p, pessoa de verdade nunca passou de
+# 58%; foto bateu 99% e 100% várias vezes.
+LIMIAR_SUSPEITA_FORTE = float(os.environ.get("ANTISPOOF_SUSPEITA_FORTE", "0.90"))
+
+
 class RostoFalsoError(ValueError):
     """
     Achou um rosto, mas ele veio de uma foto impressa ou de uma tela.
@@ -88,7 +95,19 @@ class RostoFalsoError(ValueError):
     significam coisas opostas pra auditoria: um corredor vazio é rotina, uma
     foto erguida na frente da câmera é tentativa de burlar. Uma vira ruído
     que a gente descarta; a outra é exatamente o que o log existe pra guardar.
+
+    Carrega a `certeza` do modelo porque quem chama precisa distinguir uma
+    suspeita qualquer de uma certeza gritante - só a segunda vale pros
+    segundos seguintes.
     """
+
+    def __init__(self, mensagem, certeza: float = 0.0):
+        super().__init__(mensagem)
+        self.certeza = certeza
+
+    @property
+    def forte(self) -> bool:
+        return self.certeza >= LIMIAR_SUSPEITA_FORTE
 
 
 def calcular_embedding(imagem_bytes: bytes, checar_vivacidade: bool = True) -> np.ndarray:
@@ -176,7 +195,8 @@ def calcular_embedding(imagem_bytes: bytes, checar_vivacidade: bool = True) -> n
             # access_logs. Sem isso a calibração seria no chute.
             raise RostoFalsoError(
                 f"Isso parece uma foto ou uma tela, não uma pessoa "
-                f"({certeza:.0%} de certeza)"
+                f"({certeza:.0%} de certeza)",
+                certeza=certeza,
             )
 
     # O recorte já vem do extract_faces em RGB e normalizado em [0,1], que é
