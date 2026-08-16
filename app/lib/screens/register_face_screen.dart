@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../config/tema.dart';
 import '../services/api_client.dart';
 import '../services/faces_service.dart';
+import '../services/usuarios_service.dart';
 import '../utils/formatters.dart';
 
 /// Cadastro do rosto do usuário logado - sempre o dono do token JWT, por
@@ -132,9 +133,63 @@ class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
     await _startCamera(desc);
   }
 
+  // ── Consentimento ─────────────────────────────────────────────
+  /// Mostra o texto e devolve se a pessoa concordou.
+  ///
+  /// Vem ANTES da captura, não antes do envio: pedir depois de a foto já
+  /// estar tirada transformaria o consentimento em formalidade — "já tirei,
+  /// agora só falta clicar". Antes, ele é uma escolha de verdade.
+  ///
+  /// O texto é o do servidor. Se o app trouxesse o seu, a pessoa
+  /// concordaria com uma coisa e o banco registraria outra.
+  Future<bool> _pedirConsentimento() async {
+    final Consentimento c;
+    try {
+      c = await UsuariosService.consentimento();
+    } catch (e) {
+      _showError('Não consegui carregar o termo de uso do rosto. $e');
+      return false;
+    }
+    if (!c.precisaConsentir) return true;
+    if (!mounted) return false;
+
+    final aceitou = await showDialog<bool>(
+      context: context,
+      // Sem fechar tocando fora: descartar sem querer não pode virar
+      // "recusou", nem passar por aceite.
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: Text(c.titulo),
+        content: SingleChildScrollView(
+          child: Text(c.texto, style: const TextStyle(fontSize: 13.5, height: 1.45)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Agora não'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Concordo'),
+          ),
+        ],
+      ),
+    );
+    if (aceitou != true) return false;
+
+    try {
+      await UsuariosService.consentir();
+      return true;
+    } catch (e) {
+      _showError('Não consegui registrar sua autorização. $e');
+      return false;
+    }
+  }
+
   // ── Captura ───────────────────────────────────────────────────
   Future<void> _captureFromCamera() async {
     if (_camCtrl == null || !_cameraReady) return;
+    if (!await _pedirConsentimento()) return;
     try {
       final xfile = await _camCtrl!.takePicture();
       final bytes = await File(xfile.path).readAsBytes();

@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, g
 
+from services import consentimento
 from utils.auth_middleware import login_required, require_role
 from utils.db import get_conn, put_conn
 
@@ -69,6 +70,79 @@ def resumo_frequencia(total: int, presencas: int, previstas: int) -> dict:
         # aviso.
         "reprovado_por_falta": limite >= 1 and faltas > limite,
     }
+
+
+# ------------------------------------------------------------
+# Consentimento (LGPD) - ver services/consentimento.py
+# ------------------------------------------------------------
+
+def ultimo_consentimento(cur, usuario_id):
+    """A linha mais recente da pessoa, ou None. Usada aqui e em /faces."""
+    cur.execute(
+        """
+        select versao, aceito_em, revogado_em
+        from consentimentos where usuario_id = %s
+        order by aceito_em desc limit 1
+        """,
+        (usuario_id,),
+    )
+    return cur.fetchone()
+
+
+@bp.route("/me/consentimento", methods=["GET"])
+@login_required
+def meu_consentimento():
+    """
+    O texto atual e se a pessoa já consentiu com ELE.
+
+    O texto vem do servidor, e não embutido no app, por dois motivos: um
+    APK antigo mostraria uma versão diferente da que o servidor registra, e
+    corrigir uma frase passaria a exigir publicar app novo.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            registro = ultimo_consentimento(cur, g.user_id)
+    finally:
+        put_conn(conn)
+
+    return jsonify({
+        "versao": consentimento.VERSAO,
+        "titulo": consentimento.TITULO,
+        "texto": consentimento.TEXTO,
+        "precisa_consentir": consentimento.precisa_consentir(registro),
+        "aceito_em": registro["aceito_em"] if registro else None,
+        "versao_aceita": registro["versao"] if registro else None,
+    })
+
+
+@bp.route("/me/consentimento", methods=["POST"])
+@login_required
+def consentir():
+    """
+    Registra o aceite da versão ATUAL.
+
+    A versão gravada é a do servidor, nunca a que o cliente mandar: senão
+    bastaria um app dizer "aceitei a versão 2030" pra nunca mais ser
+    perguntado.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into consentimentos (usuario_id, versao)
+                values (%s, %s)
+                returning versao, aceito_em
+                """,
+                (g.user_id, consentimento.VERSAO),
+            )
+            registro = cur.fetchone()
+        conn.commit()
+    finally:
+        put_conn(conn)
+
+    return jsonify(registro), 201
 
 
 @bp.route("/me/frequencia", methods=["GET"])

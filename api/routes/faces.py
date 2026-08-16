@@ -3,7 +3,8 @@ import time
 import psycopg2
 from flask import Blueprint, request, jsonify, g
 
-from services import cache_local, fila_offline
+from routes.usuarios import ultimo_consentimento
+from services import cache_local, consentimento, fila_offline
 from utils.auth_middleware import login_required
 from utils.device_auth import device_required
 from utils.db import (
@@ -91,6 +92,25 @@ def _dono_parecido(cur, usuario_id, embedding):
     return cur.fetchone()
 
 
+def _consentiu() -> bool:
+    """
+    Conexão curta e própria, de propósito.
+
+    O caminho normal seguraria a conexão do pool durante o cálculo do
+    embedding, que leva perto de um segundo - com 10 conexões e uma fila de
+    cadastro, isso vira espera. Aqui a consulta é uma linha por índice:
+    abre, pergunta, devolve.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            return not consentimento.precisa_consentir(
+                ultimo_consentimento(cur, g.user_id)
+            )
+    finally:
+        put_conn(conn)
+
+
 @bp.route("", methods=["POST"])
 @login_required
 def cadastrar_rosto():
@@ -106,6 +126,24 @@ def cadastrar_rosto():
     imagem_bytes = foto.read()
     if not imagem_bytes:
         return jsonify({"erro": "Arquivo de imagem vazio"}), 400
+
+    # Sem consentimento válido, nenhum rosto entra - e a checagem vem ANTES
+    # de calcular o embedding, não depois.
+    #
+    # A ordem não é detalhe: transformar a foto em vetor JÁ É tratar dado
+    # biométrico. Checar depois significaria processar primeiro e pedir
+    # licença depois, que é exatamente o que a LGPD proíbe pra dado
+    # sensível. A imagem não chega a passar pelo modelo.
+    #
+    # E a checagem é no servidor, não só na tela do app: se quem decidisse
+    # fosse o cliente, bastaria um APK antigo - ou qualquer coisa que saiba
+    # fazer um POST - pra gravar biometria sem consentimento, e o registro
+    # no banco viraria enfeite.
+    if not _consentiu():
+        return jsonify({
+            "erro": "Você precisa autorizar o uso do seu rosto antes de cadastrá-lo.",
+            "consentimento_pendente": True,
+        }), 403
 
     try:
         embedding = calcular_embedding(imagem_bytes)
@@ -304,10 +342,28 @@ def remover_captura(captura_id):
 @bp.route("", methods=["DELETE"])
 @login_required
 def remover_rosto():
+    """
+    Apaga todas as capturas da pessoa - e isso É a revogação do
+    consentimento, não uma ação separada.
+
+    Pedir "revogar" num lugar e "apagar meus dados" em outro seria criar
+    duas maneiras de dizer a mesma coisa e um estado impossível: consentido
+    sem rosto, ou rosto sem consentimento. O registro do consentimento
+    antigo NÃO é apagado, só carimbado com a data de revogação - é a prova
+    de que o tratamento anterior era legítimo, e ela não pode desaparecer
+    junto com o dado.
+    """
     conn = get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("delete from faces where usuario_id = %s", (g.user_id,))
+            cur.execute(
+                """
+                update consentimentos set revogado_em = now()
+                where usuario_id = %s and revogado_em is null
+                """,
+                (g.user_id,),
+            )
         conn.commit()
     finally:
         put_conn(conn)

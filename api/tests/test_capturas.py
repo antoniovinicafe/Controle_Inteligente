@@ -25,13 +25,17 @@ EU = "11111111-1111-1111-1111-111111111111"
 
 
 class CursorDuble:
-    def __init__(self, linhas=(), rowcount=0):
+    def __init__(self, linhas=(), rowcount=0, consentimento=None):
         self.linhas = list(linhas)
         self.rowcount = rowcount
+        self.consentimento = consentimento
         self.comandos = []
 
     def execute(self, sql, params=None):
         self.comandos.append((" ".join(sql.split()), params))
+
+    def fetchone(self):
+        return self.consentimento
 
     def fetchall(self):
         return self.linhas
@@ -162,3 +166,69 @@ def test_a_listagem_diz_o_teto(banco):
     banco([linha(9, None)])
     corpo = chamar(faces.listar_rostos)
     assert corpo.json["maximo"] == faces.MAX_FOTOS_POR_PESSOA
+
+
+# ------------------------------------------------------------
+# Consentimento: a regra é do servidor, não da tela
+# ------------------------------------------------------------
+
+def test_sem_consentimento_o_rosto_nao_entra(banco, monkeypatch):
+    # A checagem tem que ser aqui, e não só na tela do app: se quem
+    # decidisse fosse o cliente, um APK antigo - ou qualquer coisa que saiba
+    # fazer um POST - gravaria biometria sem consentimento nenhum, e o
+    # registro no banco viraria enfeite.
+    banco()
+    monkeypatch.setattr(faces.consentimento, "precisa_consentir", lambda r: True)
+
+    app = Flask(__name__)
+    with app.test_request_context(
+        data={"foto": (open(__file__, "rb"), "rosto.jpg")},
+        content_type="multipart/form-data",
+    ):
+        g.user_id = EU
+        corpo, status = faces.cadastrar_rosto.__wrapped__()
+
+    assert status == 403
+    assert corpo.json["consentimento_pendente"] is True
+
+
+def test_a_foto_nem_chega_no_modelo_sem_consentimento(banco, monkeypatch):
+    # A ORDEM importa: transformar a foto em vetor já é tratar dado
+    # biométrico. Checar depois seria processar primeiro e pedir licença
+    # depois - exatamente o que a LGPD proíbe pra dado sensível. Este teste
+    # falha se alguém reordenar a rota.
+    banco()
+    monkeypatch.setattr(faces.consentimento, "precisa_consentir", lambda r: True)
+
+    def nao_deveria_rodar(*a, **k):
+        raise AssertionError("o embedding foi calculado sem consentimento")
+
+    monkeypatch.setattr(faces, "calcular_embedding", nao_deveria_rodar)
+
+    app = Flask(__name__)
+    with app.test_request_context(
+        data={"foto": (open(__file__, "rb"), "rosto.jpg")},
+        content_type="multipart/form-data",
+    ):
+        g.user_id = EU
+        _, status = faces.cadastrar_rosto.__wrapped__()
+    assert status == 403
+
+
+def test_apagar_o_rosto_revoga_o_consentimento(banco):
+    # Revogar e "apagar meus dados" são a mesma ação: dois botões criariam
+    # um estado impossível (consentido sem rosto, rosto sem consentimento).
+    cursor = banco(rowcount=1)
+    chamar(faces.remover_rosto)
+    assert [c for c in cursor.comandos if "update consentimentos" in c[0]]
+
+
+def test_a_revogacao_nao_apaga_a_prova(banco):
+    # O registro antigo é carimbado, não removido: ele é a prova de que o
+    # tratamento anterior era legítimo, e some junto com o dado seria
+    # destruir a própria defesa.
+    cursor = banco(rowcount=1)
+    chamar(faces.remover_rosto)
+    assert not [c for c in cursor.comandos if "delete from consentimentos" in c[0]]
+    (sql, _), = [c for c in cursor.comandos if "update consentimentos" in c[0]]
+    assert "revogado_em = now()" in sql

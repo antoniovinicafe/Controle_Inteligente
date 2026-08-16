@@ -175,6 +175,36 @@ cd app && flutter pub get && flutter run
 O endereço do servidor é editável dentro do app, em **Ajustes → Servidor** —
 não precisa recompilar quando o IP da máquina muda.
 
+## Consentimento (LGPD)
+
+Vetor facial é **dado pessoal sensível** (LGPD, art. 5º, II), e tratar dado
+sensível exige consentimento *específico e destacado* — o consentimento
+genérico de usar o app não serve, e "a pessoa apertou o botão de cadastrar
+rosto" também não.
+
+Antes da primeira captura, o app mostra o termo (que vem do servidor, não
+embutido no APK) e registra o aceite em `consentimentos`: quem, quando, e
+com qual **versão** do texto. A versão importa — se o texto mudar, quem
+aceitou o anterior não consentiu com o novo, e é perguntado de novo.
+
+Três decisões que fazem esse registro valer alguma coisa:
+
+- **A recusa é do servidor, não da tela.** `POST /faces` responde 403 sem
+  consentimento válido. Se quem decidisse fosse o app, bastaria um APK
+  antigo — ou qualquer coisa que saiba fazer um POST — pra gravar biometria
+  sem consentimento.
+- **A checagem vem antes de calcular o embedding.** Transformar a foto em
+  vetor já é tratar o dado; checar depois seria processar primeiro e pedir
+  licença depois.
+- **Revogar é apagar o rosto**, e é a mesma ação: `DELETE /faces` remove as
+  capturas e carimba `revogado_em`. O registro antigo **não** é apagado —
+  ele é a prova de que o tratamento anterior era legítimo, e sumir junto com
+  o dado seria destruir a própria defesa.
+
+Quem cadastrou rosto antes de 16/08/2026 aparece com versão `0-implicito`:
+consentiu de fato, mas com um texto que não existia. O sistema trata isso
+como pendente e pergunta de novo, em vez de fingir que a pessoa leu.
+
 ## Segurança
 
 - `app/lib/config/app_config.dart` contém a chave **publishable** do Supabase.

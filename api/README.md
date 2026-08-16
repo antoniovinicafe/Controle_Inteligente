@@ -63,6 +63,7 @@ routes/dispositivos.py    → cadastro dos leitores de porta e rotação da chav
 routes/faces.py           → cadastro/status/remoção de rosto + reconhecimento na porta
 medir_rostos.py           → mede as distâncias entre rostos cadastrados (calibra o limiar de 0,30)
 services/face_service.py  → DeepFace: embedding + anti-spoofing a partir de uma foto
+services/consentimento.py → texto versionado do consentimento LGPD e quando ele vale
 services/cache_local.py   → cópia dos rostos/eventos/dispositivos pra decidir sem internet
 services/fila_offline.py  → vereditos tomados offline, esperando subir pro Postgres
 raspberry/                → o que roda na Pi da porta (totem, captura, descoberta do servidor)
@@ -89,6 +90,7 @@ por papel.
 | `POST/GET/PATCH/DELETE /eventos`, participantes, liberar manual, logs | professor/admin (dono ou admin) |
 | `POST/GET/DELETE /recorrencias` | professor/admin (dono ou admin) |
 | `POST/GET/PATCH/DELETE /dispositivos`, rotação de chave | professor/admin |
+| `GET/POST /usuarios/me/consentimento` | qualquer autenticado, sobre si |
 | `POST/GET/DELETE /faces`, `DELETE /faces/<id>` | o próprio usuário, sobre o próprio rosto |
 | `POST /faces/recognize` | a Raspberry, por `X-Device-Key` — **não** por JWT |
 

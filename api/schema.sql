@@ -45,6 +45,29 @@ create table faces (
 create index if not exists idx_faces_usuario on faces (usuario_id);
 
 -- ------------------------------------------------------------
+-- CONSENTIMENTO
+-- Vetor facial é dado pessoal SENSÍVEL pela LGPD (art. 5º, II), e tratar
+-- dado sensível exige consentimento específico e destacado - não serve o
+-- consentimento genérico de usar o app. Aqui fica a prova: quem consentiu,
+-- quando, e com qual versão do texto.
+--
+-- É tabela e não coluna em profiles porque o registro precisa sobreviver à
+-- revogação: quando a pessoa revoga, o rosto some do banco (direito dela),
+-- mas a prova de que o tratamento anterior era legítimo tem que continuar
+-- existindo. Cada evento é uma linha; revogar carimba a data na mesma.
+--
+-- Ver migracao_consentimento.sql pro racional completo.
+-- ------------------------------------------------------------
+create table consentimentos (
+    id           bigint generated always as identity primary key,
+    usuario_id   uuid not null references profiles(id) on delete cascade,
+    versao       varchar(20) not null,
+    aceito_em    timestamptz not null default now(),
+    revogado_em  timestamptz
+);
+create index if not exists idx_consentimentos_usuario on consentimentos (usuario_id);
+
+-- ------------------------------------------------------------
 -- TURMAS
 -- Grupo reutilizável de alunos, criado por um professor.
 -- ------------------------------------------------------------
