@@ -211,7 +211,16 @@ def decidir(copia: dict, embedding, dispositivo: dict, agora: datetime = None) -
     from services.face_service import e_a_mesma_pessoa
 
     vizinho = vizinho_mais_proximo(copia, embedding)
-    if not vizinho or not e_a_mesma_pessoa(vizinho[1]):
+    if not vizinho:
+        print("[identidade] cópia local sem nenhum rosto", flush=True)
+        return {"liberado": False, "motivo": "Rosto não reconhecido", "etapa": "identidade"}
+
+    # Igual ao caminho online: a distância sai no console tenha batido ou
+    # não, senão calibrar o limiar seria chute.
+    print(f"[identidade] {'bateu' if e_a_mesma_pessoa(vizinho[1]) else 'LONGE'} "
+          f"{vizinho[1]:.3f} com {vizinho[0]['nome']} (cópia local)", flush=True)
+
+    if not e_a_mesma_pessoa(vizinho[1]):
         return {"liberado": False, "motivo": "Rosto não reconhecido", "etapa": "identidade"}
 
     face, _ = vizinho

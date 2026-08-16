@@ -76,12 +76,26 @@ separaram — pessoa acusada de falsa no máximo a 58%, fotos a 68%, 99% e
 entrando é falha de segurança, pessoa barrada é um segundo de espera, e a
 porta lê de novo.
 
-O que consertou não foi ajuste fino de limiar, foi **resolução**. O
+O que melhorou não foi ajuste fino de limiar, foi **resolução**. O
 MiniFASNet julga textura de pele num recorte de 80×80 pixels; num rosto de
 ~100 px não havia textura para ver, e ele chutava. Duas lições que valem
 além deste projeto: o reconhecimento se contenta com pouca resolução mas a
 vivacidade não, e **o limiar só decide quando negar** — se o modelo disser
-"pessoa" sobre uma foto, nenhum valor ali a barra.
+"pessoa" sobre uma foto, nenhum valor ali a barra. Contra esse caso existe
+uma segunda regra: uma leitura acima de 97% de suspeita vale pelos 6
+segundos seguintes, então a foto que oscila entre "fraude" e "pessoa" não
+entra na leitura favorável.
+
+**E o mais honesto: com esta câmera as duas faixas se sobrepõem.** Em 16/08
+o rosto de uma pessoa presente foi acusado de foto a 96%, e fotos já
+marcaram 68%. Ou seja, não existe configuração que dê ao mesmo tempo
+entrada instantânea para gente de verdade e recusa garantida para foto — é
+escolha, não afinação. O projeto escolheu o lado da segurança: com o limiar
+em 0,60 cerca de uma leitura em três é recusada, e como o leitor pergunta a
+cada 1,2 s isso vira 1 a 3 segundos parado na porta em vez de entrada
+instantânea. A vivacidade aqui **encarece a fraude, não a elimina**; quem
+precisar de garantia precisa de outro sensor (infravermelho ou
+profundidade), não de outro número.
 
 Toda leitura sai no console do servidor (`[vivacidade] pessoa (91% de
 certeza, limiar 60%)`), então recalibrar numa sala nova é olhar os números

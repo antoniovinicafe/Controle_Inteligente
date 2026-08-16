@@ -353,7 +353,12 @@ ETAPAS = ("rosto", "vivacidade", "identidade", "aula", "lista")
 #
 # Não fecha o buraco - fecha a janela. Quem insistir muito ainda pode pegar
 # uma sequência limpa; o que some é o "erguer a foto e esperar".
-SEGUNDOS_APOS_SUSPEITA = 12.0
+#
+# 6 segundos, e não 12: o bloqueio também cai sobre quem tem direito quando
+# o modelo erra alto (aconteceu em 16/08, uma pessoa de verdade a 96%).
+# Numa porta com fila, 12 segundos de espera injustificada é caro; 6 ainda
+# cobre a oscilação da foto, que se repete a cada leitura.
+SEGUNDOS_APOS_SUSPEITA = 6.0
 
 # dispositivo -> quando foi a última suspeita forte.
 # ponytail: dicionário em memória, perde no restart do servidor. É estado
@@ -369,6 +374,24 @@ def _marcar_suspeita():
 def _sob_suspeita() -> bool:
     quando = _suspeitas.get(g.dispositivo_id)
     return quando is not None and (time.monotonic() - quando) < SEGUNDOS_APOS_SUSPEITA
+
+
+def _registrar_distancia(candidato):
+    """
+    Imprime a que distância a leitura bateu, tenha liberado ou não.
+
+    Mesma ideia do `[vivacidade]`: sem esse número, mexer no LIMIAR_DISTANCIA
+    é chute. Ele responde as duas perguntas que importam - quando alguém é
+    barrado, faltou pouco (0,32) ou não era ninguém (0,9)? E quando entra,
+    entrou com folga ou raspando no limiar?
+    """
+    if not candidato:
+        print(f"[identidade] ninguém cadastrado (limiar {LIMIAR_DISTANCIA})", flush=True)
+        return
+    d = candidato["distancia"]
+    veredito = "bateu" if e_a_mesma_pessoa(d) else "LONGE"
+    print(f"[identidade] {veredito} {d:.3f} com {candidato['nome']} "
+          f"(limiar {LIMIAR_DISTANCIA})", flush=True)
 
 
 def _decidir_no_banco(cur, embedding) -> dict:
@@ -396,6 +419,7 @@ def _decidir_no_banco(cur, embedding) -> dict:
         (embedding.tolist(), embedding.tolist()),
     )
     candidato = cur.fetchone()
+    _registrar_distancia(candidato)
 
     if not candidato or not e_a_mesma_pessoa(candidato["distancia"]):
         return {"liberado": False, "motivo": "Rosto não reconhecido", "etapa": "identidade"}

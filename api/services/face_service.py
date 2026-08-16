@@ -82,9 +82,17 @@ def e_a_mesma_pessoa(distancia: float) -> bool:
 
 # Acima disto, a suspeita é forte o bastante pra valer pros próximos
 # segundos, e não só pra leitura em que apareceu (ver routes/faces.py).
-# Em 15/08/2026, com a câmera em 720p, pessoa de verdade nunca passou de
-# 58%; foto bateu 99% e 100% várias vezes.
-LIMIAR_SUSPEITA_FORTE = float(os.environ.get("ANTISPOOF_SUSPEITA_FORTE", "0.90"))
+#
+# Começou em 0.90, com base em 15/08/2026: pessoa de verdade não passava de
+# 58% e foto batia 99-100%. No dia seguinte, na mesma câmera, uma pessoa de
+# verdade marcou 96% - e armou a janela, trancando quem tinha direito por
+# 12 segundos. A separação de ontem era sorte de amostra pequena.
+#
+# 0.97 deixa só o quase-certo armar a janela. É apertado contra os 96%
+# observados, e essa estreiteza é a informação importante aqui: neste
+# hardware, os dois lados se sobrepõem. A janela reduz a chance da burla,
+# não a elimina, e o preço de errar pra cima é trancar gente de verdade.
+LIMIAR_SUSPEITA_FORTE = float(os.environ.get("ANTISPOOF_SUSPEITA_FORTE", "0.97"))
 
 
 class RostoFalsoError(ValueError):
