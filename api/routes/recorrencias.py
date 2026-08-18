@@ -7,6 +7,7 @@ independente (cancelar/editar um não mexe nos outros).
 """
 
 from datetime import datetime, timedelta, time as dtime
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, request, jsonify, g
 
@@ -14,6 +15,19 @@ from utils.auth_middleware import login_required, require_role
 from utils.db import get_conn, put_conn
 
 bp = Blueprint("recorrencias", __name__, url_prefix="/api/recorrencias")
+
+# O fuso em que o professor pensa quando digita "20:47".
+#
+# `eventos.data_inicio` é timestamptz, e um datetime SEM fuso entregue a ele
+# é interpretado pelo fuso da sessão do Postgres - que no Supabase é UTC.
+# O resultado era a aula nascer 3 horas no passado: marcada pras 20:47, ela
+# ia parar às 17:47, já encerrada, e todo mundo levava falta de uma aula que
+# nunca chegou a acontecer. Aconteceu de verdade em 17/08/2026.
+#
+# Não é o fuso do servidor (`.astimezone()`) de propósito: assim a conta não
+# muda se o Flask um dia rodar numa máquina em UTC. Evento avulso não passa
+# por aqui - o app manda a data inteira já com o fuso.
+FUSO = ZoneInfo("America/Sao_Paulo")
 
 
 def expandir_ocorrencias(dias_semana, data_inicio, data_fim):
@@ -142,8 +156,8 @@ def criar_recorrencia():
                     """,
                     (
                         body["titulo"], body.get("descricao"), body.get("local"), g.user_id,
-                        datetime.combine(dia, hora_inicio),
-                        datetime.combine(dia, hora_fim),
+                        datetime.combine(dia, hora_inicio, tzinfo=FUSO),
+                        datetime.combine(dia, hora_fim, tzinfo=FUSO),
                         body.get("capacidade"), recorrencia_id,
                     ),
                 )

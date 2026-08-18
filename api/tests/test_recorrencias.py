@@ -16,6 +16,7 @@ Rodar:  cd api && venv/Scripts/python -m pytest tests -v
 """
 
 from datetime import date
+from zoneinfo import ZoneInfo
 
 from routes.recorrencias import expandir_ocorrencias
 
@@ -83,3 +84,27 @@ def test_caso_da_tela_quinze_aulas():
     # Exatamente o que a interface mostrou ao ser testada no emulador:
     # Seg+Qua, de 12/08 a 30/09 -> "VAI CRIAR 15 aulas".
     assert qtd([1, 3], date(2026, 8, 12), date(2026, 9, 30)) == 15
+
+
+# ------------------------------------------------------------
+# O fuso da hora marcada
+# ------------------------------------------------------------
+
+def test_a_hora_marcada_carrega_o_fuso():
+    """A hora que o professor digita é local, e precisa dizer isso.
+
+    `eventos.data_inicio` é timestamptz. Um datetime sem fuso entregue a ele
+    é lido pelo fuso da sessão do Postgres, que no Supabase é UTC - e a aula
+    marcada pras 20:47 nascia às 17:47, três horas no passado, já encerrada.
+    Todo mundo da turma levava falta de uma aula que nunca aconteceu.
+    Aconteceu de verdade em 17/08/2026, com a turma t06.
+
+    Este teste falha se alguém tirar o tzinfo de volta.
+    """
+    from datetime import datetime, time
+    from routes.recorrencias import FUSO
+
+    marcado = datetime.combine(date(2026, 8, 17), time(20, 47), tzinfo=FUSO)
+
+    assert marcado.utcoffset() is not None, "hora sem fuso: o Postgres vai supor UTC"
+    assert marcado.astimezone(ZoneInfo("UTC")).hour == 23, "20:47 em Brasília são 23:47 UTC"
