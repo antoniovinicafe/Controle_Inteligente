@@ -86,16 +86,48 @@ uma segunda regra: uma leitura acima de 97% de suspeita vale pelos 6
 segundos seguintes, então a foto que oscila entre "fraude" e "pessoa" não
 entra na leitura favorável.
 
-**E o mais honesto: com esta câmera as duas faixas se sobrepõem.** Em 16/08
-o rosto de uma pessoa presente foi acusado de foto a 96%, e fotos já
-marcaram 68%. Ou seja, não existe configuração que dê ao mesmo tempo
-entrada instantânea para gente de verdade e recusa garantida para foto — é
-escolha, não afinação. O projeto escolheu o lado da segurança: com o limiar
-em 0,60 cerca de uma leitura em três é recusada, e como o leitor pergunta a
-cada 1,2 s isso vira 1 a 3 segundos parado na porta em vez de entrada
-instantânea. A vivacidade aqui **encarece a fraude, não a elimina**; quem
-precisar de garantia precisa de outro sensor (infravermelho ou
-profundidade), não de outro número.
+Em 16/08 as faixas voltaram a se tocar: o rosto de uma pessoa presente foi
+acusado de foto a 96%, e fotos já tinham marcado 68%. Nessa altura não
+existia configuração que desse ao mesmo tempo entrada instantânea para
+gente de verdade e recusa garantida para foto — era escolha, não afinação,
+e o projeto escolheu o lado da segurança.
+
+### A terceira medição, e ela veio de um acidente
+
+Em 21/09/2026, **10 fotos seguidas foram negadas, a mais fraca a 75%**:
+
+| | |
+|---|---|
+| certezas de fraude | 100, 100, 100, 99, 99, 98, 97, 95, 77, **75** |
+| limiar | 60 |
+| gente de verdade | passando normalmente |
+
+A margem mais apertada foi de 15 pontos, contra os 8 de agosto — e nenhuma
+foto chegou perto de passar.
+
+**O que mudou não foi o limiar, foi de novo a resolução — e por acaso.** O
+cabo flat não coube na caixa impressa, e a câmera acabou parafusada girada
+90°. Corrigir isso em software (`FETIN_ROTACAO`) teve um efeito colateral
+que ninguém planejou: o sensor é 16:9 e o visor da porta é retrato 3:4,
+então na orientação natural as laterais eram descartadas. Girada, o recorte
+do rosto saiu de 540×720 para **720×960 — 78% mais pixels**. O MiniFASNet
+recebeu textura de pele suficiente para decidir em vez de chutar.
+
+É a mesma lição de agosto medida uma terceira vez, e agora sem querer: **o
+que conserta vivacidade é resolução no rosto, não ajuste de limiar.**
+
+### O que essa medição não prova
+
+Foram 10 leituras, de uma pessoa, com um tipo de ataque — foto em tela. Não
+diz nada sobre máscara, vídeo em alta qualidade, ou papel fotográfico de
+boa impressão, que não foram testados. E não é a taxa de recusa de gente de
+verdade, que continua sem medição sistemática.
+
+A vivacidade aqui **encarece a fraude, não a elimina**; quem precisar de
+garantia precisa de outro sensor (infravermelho ou profundidade), não de
+outro número. O que a medição de 21/09 permite afirmar é mais modesto e
+ainda assim útil: com este recorte, o ataque mais provável — levantar o
+celular com a foto de alguém — está sendo barrado com folga.
 
 Toda leitura sai no console do servidor (`[vivacidade] pessoa (91% de
 certeza, limiar 60%)`), então recalibrar numa sala nova é olhar os números
@@ -245,6 +277,21 @@ Corrigido: sobe sem banco e se reconecta sozinho.
 No mesmo dia o totem passou a se encaixar em qualquer resolução, e isso
 foi conferido rodando no mini monitor de 7" da porta: o layout continua
 desenhado em 1080p e é ajustado à tela real na hora de exibir.
+
+Em 21/09/2026 o leitor entrou na **caixa impressa**, e a montagem física
+exigiu três correções de software que não estavam previstas. O monitor
+novo é 4:3 e o desenho assumia 16:9, então sobrava tarja preta e tudo
+encolhia; a moldura impressa cobria a parte de baixo da tela, e o veredito
+ficava atrás do plástico; e o cabo flat não cabia com a câmera na posição
+natural, que acabou parafusada girada 90°. Os três viraram ajustes no
+`fetin.env` — proporção calculada da tela real, margem e deslocamento, e
+rotação da imagem — porque nenhum deles é decisão de projeto: são
+consequência de como aquela caixa ficou, e a próxima vai ficar diferente.
+
+A rotação trouxe de brinde a melhor medição de vivacidade do projeto (ver
+"O que impede a burla"), e no mesmo dia a cadeia inteira foi observada
+acertando quatro desfechos diferentes em um minuto: reconhecido e sem
+aula, reconhecido e fora da lista, rosto desconhecido, e liberado.
 
 O que falta:
 

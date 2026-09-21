@@ -22,6 +22,16 @@ device_key*
 cache_local.json
 cache_local.tmp
 
+# Saída do servidor gravada em arquivo pra calibrar a vivacidade. Toda
+# leitura sai no console (`[vivacidade] ...`), inclusive as que passam, e
+# é a única janela pra medir - mas o console rola e some. Gravar num
+# arquivo é o que permite contar as leituras depois:
+#
+#   venv/Scripts/python -u app.py 2>&1 | Tee-Object -FilePath vivacidade.log
+#
+# Não sobe: junto com os números vão os nomes de quem passou na porta.
+*.log
+
 # Vereditos tomados enquanto o banco estava fora de alcance, esperando
 # subir (services/fila_offline.py). Tem usuario_id e horário de quem passou
 # na porta - é registro de presença, não sobe pra repositório nenhum.
