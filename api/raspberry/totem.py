@@ -119,6 +119,11 @@ EXPLICACAO = {
 # Regule em FETIN_MARGEM, no ~/.config/fetin.env da Raspberry.
 MARGEM_SEGURA = float(os.environ.get("FETIN_MARGEM", "1.0"))
 
+# Quantos graus girar a imagem da câmera pra ela ficar em pé. Ver girar().
+ROTACAO = int(os.environ.get("FETIN_ROTACAO", "0")) % 360
+if ROTACAO % 90:
+    sys.exit(f"FETIN_ROTACAO precisa ser 0, 90, 180 ou 270 - veio {ROTACAO}")
+
 SEGUNDOS_RESULTADO = 5.0    # quanto tempo o veredito fica na tela
 JANELA_TENTATIVA = 8.0      # depois de detectar movimento, insiste por até isso
 INTERVALO_ENVIO = 1.2
@@ -132,13 +137,39 @@ LIMIAR_MOVIMENTO = 5.0      # diferença média de brilho que conta como "algué
 _LUMA = np.array([0.299, 0.587, 0.114], dtype=np.float32)
 
 
+def girar(quadro: np.ndarray) -> np.ndarray:
+    """Põe a imagem em pé quando a câmera está montada torta.
+
+    O cabo flat não cabia na caixa impressa com a câmera na posição
+    natural, e ela acabou parafusada girada. Isso não é cosmético: o
+    detector de rosto e o anti-spoofing foram treinados em rosto EM PÉ, e
+    um rosto deitado 90 graus quase sempre não é detectado - a porta
+    responderia "nenhum rosto detectado" o tempo todo, sem pista de que o
+    problema é mecânico.
+
+    Girar aqui, logo na captura, conserta tudo de uma vez: o preview, a
+    imagem que sobe pro servidor e o recorte 3:4 saem todos da mesma
+    matriz já em pé.
+
+    FETIN_ROTACAO, no ~/.config/fetin.env: quantos graus girar no sentido
+    anti-horário pra imagem ficar em pé. 0, 90, 180 ou 270.
+    """
+    if not ROTACAO:
+        return quadro
+    return np.rot90(quadro, ROTACAO // 90)
+
+
 def recortar_retrato(quadro: np.ndarray) -> np.ndarray:
     """
-    Da imagem 640x480 da câmera tira um 3:4 central e corrige a ordem
-    dos canais.
+    Tira um 3:4 central da imagem da câmera e corrige a ordem dos canais.
 
     O picamera2 entrega "RGB888" em ordem BGR (o nome vem do libcamera,
     não do numpy) - sem o ::-1 no último eixo a pele sai azulada.
+
+    O recorte decide sozinho por qual eixo cortar, porque depois do
+    `girar` o quadro pode chegar deitado OU em pé: com a câmera a 90 graus
+    um 1280x720 vira 720x1280, e a conta antiga - que assumia paisagem -
+    daria uma margem negativa e um recorte vazio.
 
     Repare que aqui NÃO se espelha: esta é a imagem que vai pro
     reconhecimento, e o cadastro foi feito na orientação real da câmera.
@@ -146,9 +177,17 @@ def recortar_retrato(quadro: np.ndarray) -> np.ndarray:
     invertida gasta margem de semelhança à toa.
     """
     altura, largura = quadro.shape[:2]
-    alvo = int(altura * 3 / 4)
-    x0 = (largura - alvo) // 2
-    return np.ascontiguousarray(quadro[:, x0:x0 + alvo, ::-1])
+
+    if largura * 4 > altura * 3:        # largo demais: corta nas laterais
+        alvo = int(altura * 3 / 4)
+        x0 = (largura - alvo) // 2
+        recorte = quadro[:, x0:x0 + alvo]
+    else:                               # alto demais: corta em cima e embaixo
+        alvo = int(largura * 4 / 3)
+        y0 = (altura - alvo) // 2
+        recorte = quadro[y0:y0 + alvo, :]
+
+    return np.ascontiguousarray(recorte[:, :, ::-1])
 
 
 def espelhar(rgb: np.ndarray) -> np.ndarray:
@@ -497,7 +536,7 @@ def main():
             elif evento.type == pygame.KEYDOWN and evento.key in (pygame.K_ESCAPE, pygame.K_q):
                 rodando = False
 
-        quadro = recortar_retrato(camera.capture_array())
+        quadro = recortar_retrato(girar(camera.capture_array()))
         agora = time.time()
 
         # --- movimento: só acorda a rede quando alguém chega ---
