@@ -54,10 +54,61 @@ MAX_FOTOS_POR_PESSOA = 5
 # segunda foto - logo a que existe pra cobrir a outra luz.
 LIMIAR_ROSTO_ESTRANHO = 0.70
 
+# Abaixo disto a captura nova é a MESMA imagem de uma que a conta já tem,
+# não uma foto parecida.
+#
+# Cada pessoa guarda até 5 capturas, e o teto existe pra cobrir variação -
+# luz, ângulo, óculos. A busca da porta compara contra a mais próxima das
+# cinco, então o que faz o limiar de 0,30 funcionar é as cinco serem
+# DIFERENTES entre si. Cinco cópias da mesma foto valem exatamente o mesmo
+# que uma, com quatro vagas queimadas.
+#
+# Aconteceu de verdade: em 17/08/2026 uma conta ficou com 5 capturas das
+# quais só 3 eram distintas - dois pares com distância 0,000000000, ou
+# seja, imagens idênticas. Toque duplo no botão, ou a câmera devolvendo o
+# mesmo quadro em capturas seguidas.
+#
+# Por que não bastava a checagem de 0,70: ela pergunta se a foto é da
+# mesma PESSOA, e duplicata passa com folga - distância zero é o caso mais
+# parecido que existe. É uma pergunta diferente, e precisa do seu próprio
+# piso.
+#
+# O valor não é zero absoluto de propósito, e saiu de medição nos 39 pares
+# de capturas da mesma pessoa que havia no banco em 21/09/2026:
+#
+#   RECUSADOS    0,000000000  e  0,000000000   imagens idênticas
+#                0,009005105                   quadros consecutivos, sem
+#                                              movimento nenhum
+#   MAIS PRÓXIMO
+#   QUE PASSA    0,015529                      par legítimo
+#
+# 0,01 cabe nesse vão. A margem é estreita - 0,009 contra 0,0155 - e é
+# assimétrica de propósito: recusar uma captura legítima custa tirar outra
+# foto, e deixar passar uma duplicata queima uma das cinco vagas em
+# silêncio, que é o erro que ninguém percebe.
+#
+# Remedir junto com o medir_rostos.py quando entrar uma leva nova de
+# cadastros: câmera diferente muda a que distância dois quadros
+# consecutivos ficam um do outro.
+LIMIAR_DUPLICATA = 0.01
+
 
 def e_o_mesmo_rosto(distancia: float) -> bool:
     """A captura nova é a mesma cara das que a conta já tem?"""
     return distancia <= LIMIAR_ROSTO_ESTRANHO
+
+
+def e_duplicata(distancia) -> bool:
+    """A captura nova é a mesma IMAGEM de uma que a conta já tem?
+
+    Pergunta diferente de `e_o_mesmo_rosto`, e por isso mora numa função
+    separada: aquela responde "é a mesma pessoa?", e uma duplicata passa
+    nela com folga. Ver LIMIAR_DUPLICATA.
+
+    `distancia` vem nula quando a conta ainda não tem captura nenhuma - aí
+    não há com o que duplicar.
+    """
+    return distancia is not None and distancia < LIMIAR_DUPLICATA
 
 
 def _propria_mais_proxima(cur, usuario_id, embedding):
@@ -181,6 +232,22 @@ def cadastrar_rosto():
                         "erro": "Essa foto não parece a mesma pessoa das suas "
                                 "outras. Tente de novo de frente, com o rosto "
                                 "inteiro no quadro e mais luz."
+                    }), 422
+
+                # A mesma imagem de novo. Ver LIMIAR_DUPLICATA: guardar
+                # duas cópias iguais gasta uma das cinco vagas sem cobrir
+                # nenhuma condição nova, e é justamente a variedade entre
+                # as capturas que faz o reconhecimento funcionar.
+                #
+                # O texto pede variação em vez de só recusar: quem tocou
+                # duas vezes no botão não faz ideia do que deu errado, e
+                # "foto repetida" sozinho não diz o que fazer a seguir.
+                if e_duplicata(distancia):
+                    return jsonify({
+                        "erro": "Essa foto é igual a uma que você já tem. "
+                                "Mude o ângulo ou a luz antes de tirar a "
+                                "próxima - são as diferenças entre as fotos "
+                                "que fazem a porta reconhecer você."
                     }), 422
 
             # Esse rosto já é de outra conta?

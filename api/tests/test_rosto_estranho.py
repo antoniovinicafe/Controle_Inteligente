@@ -106,3 +106,56 @@ def test_rosto_de_outra_pessoa_nao_entra_na_conta():
     assert not e_o_mesmo_rosto(mais_proxima(outra, minhas))
 
 
+
+
+# ------------------------------------------------------------
+# A mesma imagem duas vezes
+# ------------------------------------------------------------
+
+def test_captura_identica_e_recusada():
+    """Duplicata queima uma das cinco vagas sem cobrir condição nenhuma.
+
+    A busca da porta compara contra a captura MAIS PRÓXIMA das cinco, então
+    o que faz o limiar de 0,30 funcionar é elas serem diferentes entre si.
+    Cinco cópias da mesma foto valem o mesmo que uma.
+
+    Aconteceu em 17/08/2026: uma conta com 5 capturas das quais só 3 eram
+    distintas, dois pares medindo 0,000000000 - imagens idênticas.
+    """
+    from routes.faces import e_duplicata
+    assert e_duplicata(0.0), "imagem idêntica tem que ser recusada"
+    assert e_duplicata(0.000000001)
+
+
+def test_a_checagem_de_duplicata_nao_e_a_de_pessoa_parecida():
+    """São perguntas diferentes e precisam de limiares diferentes.
+
+    A de 0,70 pergunta "é a mesma pessoa?", e uma duplicata passa nela com
+    folga - distância zero é o caso mais parecido que existe. Se alguém
+    tentar reaproveitar aquele limiar aqui, duplicata volta a entrar.
+    """
+    from routes.faces import e_duplicata, e_o_mesmo_rosto
+    # Uma duplicata é, obviamente, "a mesma pessoa" - e é justamente por
+    # isso que a checagem antiga não a pegava.
+    assert e_o_mesmo_rosto(0.0) and e_duplicata(0.0)
+
+
+def test_captura_legitima_em_sequencia_nao_e_confundida_com_duplicata():
+    """O piso não pode pegar foto de verdade tirada logo depois da outra.
+
+    Duas capturas reais com a pessoa praticamente parada já mediram 0,033.
+    Imagens idênticas medem 0,000. O limiar tem que caber nesse vão.
+    """
+    from routes.faces import e_duplicata
+    PAR_LEGITIMO_MAIS_PROXIMO = 0.033
+    assert not e_duplicata(PAR_LEGITIMO_MAIS_PROXIMO)
+
+
+def test_primeira_captura_nao_tem_com_o_que_duplicar():
+    """Sem captura anterior a distância vem nula, e nula não é duplicata.
+
+    Sem este caso a primeira foto de toda conta seria recusada - ou
+    estouraria comparando None com float.
+    """
+    from routes.faces import e_duplicata
+    assert not e_duplicata(None)
