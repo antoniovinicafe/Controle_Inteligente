@@ -71,11 +71,24 @@ FONTE_DADOS = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
 # Tamanho de PROJETO, não da tela. Todo o layout abaixo é escrito nestas
 # coordenadas e a classe Tela encaixa o resultado na resolução real (ver
-# _apresentar), então um mini display de 7" - 1024x600, 800x480 - mostra o
-# mesmo desenho sem que nenhum número aqui mude.
+# _apresentar), então qualquer monitor mostra o mesmo desenho sem que
+# nenhum número aqui mude.
+#
+# A ALTURA é fixa: é dela que saem os tamanhos de fonte e as alturas do
+# layout. A LARGURA aqui é só o caso 16:9 - a de verdade é calculada na
+# Tela, a partir da PROPORÇÃO da tela real, e nunca passa desta.
+#
+# Existe porque o monitor da porta mudou de 1024x600 (16:9) pra 1024x768
+# (4:3) e o desenho passou a caber com 96px de tarja preta em cima e
+# embaixo, usando 75% da altura disponível e encolhendo tudo à toa. Fixar
+# 16:9 num projeto que roda em qualquer monitor emprestado é assumir uma
+# tela que não se controla.
+#
+# Como todo posicionamento horizontal já era relativo à largura, estreitar
+# o quadro aproxima as bordas do centro sem mexer em nenhuma coordenada.
 LARGURA, ALTURA = 1920, 1080
 VP_L, VP_A = 456, 608                 # retrato 3:4, proporção de foto 3x4
-VP_X, VP_Y = (LARGURA - VP_L) // 2, 128
+VP_Y = 128
 
 # Alturas do bloco de texto. O veredito e o nome da sala dividem a mesma
 # linha de base: parado a tela diz de que porta se trata, e na hora do
@@ -94,6 +107,17 @@ EXPLICACAO = {
     "aula": "Nenhuma aula acontecendo aqui agora",
     "lista": "Você não foi convidado para esta aula",
 }
+
+# Encolhe o desenho e centraliza, pra fugir da borda física da tela.
+#
+# Existe porque monitor barato mente: anuncia 1024x600 por HDMI e mostra
+# menos que isso, comendo alguns pixels de cada lado. O desenho sai inteiro
+# do software - dá pra conferir com `grim` - e mesmo assim falta pedaço na
+# tela. Como isso é do painel, não do código, o ajuste é um botão em vez de
+# um número fixo: 1.0 usa a tela toda, 0.92 recolhe 8%.
+#
+# Regule em FETIN_MARGEM, no ~/.config/fetin.env da Raspberry.
+MARGEM_SEGURA = float(os.environ.get("FETIN_MARGEM", "1.0"))
 
 SEGUNDOS_RESULTADO = 5.0    # quanto tempo o veredito fica na tela
 JANELA_TENTATIVA = 8.0      # depois de detectar movimento, insiste por até isso
@@ -245,17 +269,27 @@ class Tela:
         )
         pygame.display.set_caption("Fetin - Controle de acesso")
 
+        larg_real, alt_real = self.superficie.get_size()
+
+        # A largura do desenho acompanha a PROPORÇÃO da tela real, com a
+        # altura fixa em 1080. Numa tela 4:3 o quadro fica 1440x1080 e
+        # preenche tudo; numa 16:9 continua 1920x1080, exatamente como
+        # antes. Nunca mais largo que o projeto, pra que um monitor
+        # panorâmico não estique o desenho - aí sobra preto nas laterais,
+        # que é onde não há conteúdo.
+        self.larg = min(LARGURA, int(ALTURA * larg_real / alt_real))
+        self.vp_x = (self.larg - VP_L) // 2
+
         # Tudo é desenhado aqui, no tamanho de projeto.
-        self.tela = pygame.Surface((LARGURA, ALTURA))
+        self.tela = pygame.Surface((self.larg, ALTURA))
 
         # Encaixe proporcional, com sobra preta quando a tela tem outro
         # formato. Esticar deformaria o rosto no preview - que é justamente
         # o que a pessoa usa pra se enquadrar na câmera.
-        larg_real, alt_real = self.superficie.get_size()
-        escala = min(larg_real / LARGURA, alt_real / ALTURA)
-        self._destino = pygame.Rect(0, 0, int(LARGURA * escala), int(ALTURA * escala))
+        escala = min(larg_real / self.larg, alt_real / ALTURA) * MARGEM_SEGURA
+        self._destino = pygame.Rect(0, 0, int(self.larg * escala), int(ALTURA * escala))
         self._destino.center = (larg_real // 2, alt_real // 2)
-        self._escalar = self._destino.size != (LARGURA, ALTURA)
+        self._escalar = self._destino.size != (self.larg, ALTURA)
 
         self.f_display = pygame.font.Font(FONTE_DISPLAY, 96)
         self.f_nome = pygame.font.Font(FONTE_TEXTO, 38)
@@ -281,7 +315,7 @@ class Tela:
 
     def _centralizado(self, texto, fonte, cor, y):
         img = fonte.render(texto, True, cor)
-        self.tela.blit(img, img.get_rect(center=(LARGURA // 2, y)))
+        self.tela.blit(img, img.get_rect(center=(self.larg // 2, y)))
 
     def _cantoneiras(self, cor):
         """
@@ -289,8 +323,8 @@ class Tela:
         fechar uma caixa em volta do rosto da pessoa.
         """
         braco, esp, folga = 34, 3, 14
-        x0, y0 = VP_X - folga, VP_Y - folga
-        x1, y1 = VP_X + VP_L + folga, VP_Y + VP_A + folga
+        x0, y0 = self.vp_x - folga, VP_Y - folga
+        x1, y1 = self.vp_x + VP_L + folga, VP_Y + VP_A + folga
         for cx, cy, dx, dy in ((x0, y0, 1, 1), (x1, y0, -1, 1),
                                (x0, y1, 1, -1), (x1, y1, -1, -1)):
             pygame.draw.line(self.tela, cor, (cx, cy), (cx + dx * braco, cy), esp)
@@ -303,7 +337,7 @@ class Tela:
         """
         larg, gap, alt = 104, 14, 5
         total = 4 * larg + 3 * gap
-        x = (LARGURA - total) // 2
+        x = (self.larg - total) // 2
         y = VP_Y + VP_A + 32
 
         indice = ETAPAS.index(etapa_falha) if etapa_falha in ETAPAS else None
@@ -334,15 +368,15 @@ class Tela:
         s.blit(self.f_dados.render("INATEL · CONTROLE DE ACESSO", True, APAGADO), (64, 44))
         hora = time.strftime("%H:%M:%S")
         img = self.f_dados.render(hora, True, APAGADO)
-        s.blit(img, img.get_rect(topright=(LARGURA - 64, 44)))
+        s.blit(img, img.get_rect(topright=(self.larg - 64, 44)))
 
         liberado = bool(resultado and resultado.get("liberado"))
         etapa = resultado.get("etapa") if resultado else None
 
         if retrato is not None:
-            s.blit(retrato, (VP_X, VP_Y))
+            s.blit(retrato, (self.vp_x, VP_Y))
         else:
-            pygame.draw.rect(s, PLACA, (VP_X, VP_Y, VP_L, VP_A))
+            pygame.draw.rect(s, PLACA, (self.vp_x, VP_Y, VP_L, VP_A))
 
         if liberado:
             self._cantoneiras(MENTA)
@@ -380,7 +414,7 @@ class Tela:
 
         if aviso_rede:
             img = self.f_dados.render("Sem conexão com o servidor", True, CORAL)
-            s.blit(img, img.get_rect(center=(LARGURA // 2, Y_AVISO)))
+            s.blit(img, img.get_rect(center=(self.larg // 2, Y_AVISO)))
 
         self._apresentar()
 
