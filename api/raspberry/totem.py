@@ -119,6 +119,19 @@ EXPLICACAO = {
 # Regule em FETIN_MARGEM, no ~/.config/fetin.env da Raspberry.
 MARGEM_SEGURA = float(os.environ.get("FETIN_MARGEM", "1.0"))
 
+# Desloca o desenho na vertical, em fração da altura da tela. Negativo
+# sobe, positivo desce.
+#
+# A MARGEM_SEGURA encolhe e centraliza, o que só serve quando a tela come
+# as bordas por igual. Na porta o que tapa é a MOLDURA IMPRESSA: ela cobre
+# só a parte de baixo do LCD, e o veredito ficava atrás do plástico. Pra
+# liberar 15% embaixo com margem uniforme eu teria que desperdiçar os
+# mesmos 15% em cima.
+#
+# Os dois se combinam: a margem dá a folga, este desloca a folga pro lado
+# que precisa. FETIN_DESLOCA_Y no fetin.env.
+DESLOCA_Y = float(os.environ.get("FETIN_DESLOCA_Y", "0"))
+
 # Quantos graus girar a imagem da câmera pra ela ficar em pé. Ver girar().
 ROTACAO = int(os.environ.get("FETIN_ROTACAO", "0")) % 360
 if ROTACAO % 90:
@@ -328,6 +341,7 @@ class Tela:
         escala = min(larg_real / self.larg, alt_real / ALTURA) * MARGEM_SEGURA
         self._destino = pygame.Rect(0, 0, int(self.larg * escala), int(ALTURA * escala))
         self._destino.center = (larg_real // 2, alt_real // 2)
+        self._destino.y += int(alt_real * DESLOCA_Y)
         self._escalar = self._destino.size != (self.larg, ALTURA)
 
         self.f_display = pygame.font.Font(FONTE_DISPLAY, 96)
