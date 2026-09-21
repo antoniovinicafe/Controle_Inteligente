@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -64,6 +65,26 @@ class ApiClient {
         ? corpo['erro'] as String
         : 'Erro inesperado (${resp.statusCode})';
     throw ApiException(resp.statusCode, mensagem);
+  }
+
+  /// Baixa um arquivo e devolve os bytes crus.
+  ///
+  /// O [get] normal faz jsonDecode da resposta, o que num CSV estoura -
+  /// e a mensagem de erro falaria de JSON, escondendo que o problema era
+  /// só o método errado. Por isso este existe separado.
+  ///
+  /// O erro, quando vem, continua sendo JSON: a API só manda o arquivo
+  /// quando dá certo.
+  static Future<Uint8List> getBytes(String path) async {
+    final resp = await _comRede(
+      () => http.get(_uri(path), headers: _headers),
+      const Duration(seconds: 60),
+    );
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return resp.bodyBytes;
+    }
+    _handle(resp);
+    throw ApiException(resp.statusCode, 'Erro inesperado');
   }
 
   static Future<dynamic> get(String path) async {

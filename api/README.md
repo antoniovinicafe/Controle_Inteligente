@@ -55,6 +55,7 @@ utils/auth_middleware.py  → valida JWT via JWKS, injeta g.user_id/g.user_role
 utils/device_auth.py      → autentica a Raspberry por X-Device-Key (não é uma pessoa logada)
 utils/curso.py            → deduz o curso do e-mail institucional (gec → Computação)
 utils/json_provider.py    → serializa datetime em ISO 8601 (Flask usa formato HTTP por padrão - quebra clients Dart/JS)
+utils/planilha.py         → CSV que o Excel brasileiro abre com duplo clique (BOM + ponto e vírgula)
 routes/usuarios.py        → perfil, complete-cadastro, listar/promover usuários, frequência própria
 routes/turmas.py          → CRUD turma + gestão de alunos + frequência da turma
 routes/eventos.py         → CRUD evento + participantes + liberação manual + logs
@@ -88,6 +89,7 @@ por papel.
 | `GET /usuarios`, `PATCH /usuarios/<id>/role` | professor/admin (listar), admin (promover) |
 | `POST/GET /turmas`, gestão de alunos | professor/admin |
 | `POST/GET/PATCH/DELETE /eventos`, participantes, liberar manual, logs | professor/admin (dono ou admin) |
+| `GET /eventos/<id>/presenca.csv`, `GET /turmas/<id>/frequencia.csv` | professor/admin |
 | `POST/GET/DELETE /recorrencias` | professor/admin (dono ou admin) |
 | `POST/GET/PATCH/DELETE /dispositivos`, rotação de chave | professor/admin |
 | `GET/POST /usuarios/me/consentimento` | qualquer autenticado, sobre si |

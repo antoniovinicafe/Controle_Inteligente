@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../config/tema.dart';
 import '../models/access_log.dart';
 import '../models/evento.dart';
+import '../services/planilha_service.dart';
 import '../models/participante.dart';
 import '../models/perfil.dart';
 import '../models/turma.dart';
@@ -323,6 +324,27 @@ class _EventoCorpoState extends State<_EventoCorpo> {
     }
   }
 
+  /// Baixa a lista de presença e abre a folha de compartilhamento.
+  ///
+  /// O professor continua tendo que lançar presença no sistema da
+  /// faculdade; sem isto ele faz isso olhando a tela e digitando, que é o
+  /// trabalho manual que o projeto existe pra eliminar.
+  Future<void> _exportar() async {
+    final evento = await _futureEvento;
+    if (!mounted) return;
+    try {
+      await PlanilhaService.presencaDoEvento(evento.id, evento.titulo);
+    } on ApiException catch (e) {
+      if (mounted) _avisar(e.mensagem);
+    } catch (_) {
+      if (mounted) _avisar('Não consegui gerar a planilha.');
+    }
+  }
+
+  void _avisar(String texto) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -335,6 +357,10 @@ class _EventoCorpoState extends State<_EventoCorpo> {
             ? [
                 PopupMenuButton<void>(
                   itemBuilder: (context) => [
+                    PopupMenuItem(
+                      onTap: _exportar,
+                      child: const Text('Exportar presença'),
+                    ),
                     PopupMenuItem(
                       onTap: _editar,
                       child: const Text('Editar evento'),

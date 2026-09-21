@@ -5,6 +5,8 @@ import '../config/tema.dart';
 import '../models/frequencia.dart';
 import '../models/perfil.dart';
 import '../models/turma.dart';
+import '../services/api_client.dart';
+import '../services/planilha_service.dart';
 import 'eventos_screen.dart' show Selo, corDaFrequencia;
 import '../services/auth_provider.dart';
 import '../services/turmas_service.dart';
@@ -87,6 +89,24 @@ class _TurmaDetailScreenState extends State<TurmaDetailScreen> {
     }
   }
 
+  /// Baixa a frequência da turma e abre a folha de compartilhamento.
+  ///
+  /// É a planilha do fim do semestre: a do evento resolve uma aula, esta
+  /// resolve a matéria - que é onde a reprovação por falta é decidida.
+  Future<void> _exportar() async {
+    try {
+      await PlanilhaService.frequenciaDaTurma(widget.turma.id, widget.turma.nome);
+    } on ApiException catch (e) {
+      if (mounted) _avisar(e.mensagem);
+    } catch (_) {
+      if (mounted) _avisar('Não consegui gerar a planilha.');
+    }
+  }
+
+  void _avisar(String texto) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final ehProfessor = context.watch<AuthProvider>().perfil?.isProfessor ?? false;
@@ -101,6 +121,11 @@ class _TurmaDetailScreenState extends State<TurmaDetailScreen> {
           title: Text(widget.turma.nome),
           actions: ehProfessor
               ? [
+                  IconButton(
+                    icon: const Icon(Icons.ios_share),
+                    tooltip: 'Exportar frequência',
+                    onPressed: _exportar,
+                  ),
                   IconButton(
                     icon: const Icon(Icons.event_repeat),
                     tooltip: 'Nova aula recorrente',

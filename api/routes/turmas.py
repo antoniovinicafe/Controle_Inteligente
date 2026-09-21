@@ -4,6 +4,7 @@ from routes.usuarios import resumo_frequencia
 from utils.auth_middleware import login_required, require_role
 from utils.curso import curso_do_email
 from utils.db import get_conn, put_conn
+from utils.planilha import resposta_csv
 
 bp = Blueprint("turmas", __name__, url_prefix="/api/turmas")
 
@@ -70,7 +71,9 @@ def listar_turmas():
 
 
 def _dono_da_turma_ou_admin(cur, turma_id):
-    cur.execute("select professor_id from turmas where id = %s", (turma_id,))
+    # Traz o nome junto: a exportação usa ele pro nome do arquivo, e uma
+    # segunda consulta só pra isso seria ida ao banco à toa.
+    cur.execute("select id, nome, professor_id from turmas where id = %s", (turma_id,))
     turma = cur.fetchone()
     if not turma:
         return None, False
@@ -248,6 +251,80 @@ def frequencia_da_turma(turma_id):
         }
         for a in alunos
     ])
+
+
+@bp.route("/<int:turma_id>/frequencia.csv", methods=["GET"])
+@login_required
+@require_role("professor", "admin")
+def exportar_frequencia(turma_id):
+    """A frequência da turma inteira, pronta pra abrir no Excel.
+
+    É a planilha que o professor precisa no fim do semestre, e a razão de
+    ela existir junto com a do evento: a do evento resolve uma aula, esta
+    resolve a matéria - que é onde a decisão de reprovar por falta é
+    tomada.
+
+    Usa a MESMA consulta e o MESMO resumo_frequencia da tela de
+    frequência, de propósito. Uma exportação que recalcula a conta por
+    conta própria vira uma segunda verdade, e a hora de descobrir que as
+    duas divergem seria com a planilha já entregue.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            turma, autorizado = _dono_da_turma_ou_admin(cur, turma_id)
+            if not turma:
+                return jsonify({"erro": "Turma não encontrada"}), 404
+            if not autorizado:
+                return jsonify({"erro": "Sem permissão"}), 403
+
+            cur.execute(
+                """
+                select p.nome, p.matricula,
+                       count(e.id) filter (where e.data_fim < now()) as total,
+                       count(e.id) filter (where e.data_fim < now()
+                                             and ep.status = 'liberado') as presencas,
+                       count(e.id) as previstas
+                from turma_alunos ta
+                join profiles p on p.id = ta.aluno_id
+                left join evento_participantes ep
+                       on ep.usuario_id = ta.aluno_id and ep.turma_id = ta.turma_id
+                left join eventos e
+                       on e.id = ep.evento_id
+                      and e.status != 'cancelado'
+                where ta.turma_id = %s
+                group by p.nome, p.matricula
+                order by p.nome
+                """,
+                (turma_id,),
+            )
+            alunos = cur.fetchall()
+    finally:
+        put_conn(conn)
+
+    linhas = []
+    for a in alunos:
+        r = resumo_frequencia(a["total"], a["presencas"], a["previstas"])
+        linhas.append([
+            a["nome"],
+            a["matricula"],
+            r["presencas"],
+            r["total"],
+            # Percentual vem como número, não como "83%": assim o Excel
+            # soma, ordena e filtra. Texto com % viraria coluna morta.
+            r["percentual"] if r["percentual"] is not None else "",
+            r["faltas"],
+            r["limite_faltas"],
+            r["faltas_restantes"],
+            "Sim" if r["reprovado_por_falta"] else "Nao",
+        ])
+
+    return resposta_csv(
+        f"frequencia {turma['nome']}",
+        ["Nome", "Matricula", "Presencas", "Aulas dadas", "Percentual",
+         "Faltas", "Limite de faltas", "Faltas restantes", "Reprovado por falta"],
+        linhas,
+    )
 
 
 @bp.route("/<int:turma_id>/alunos", methods=["GET"])

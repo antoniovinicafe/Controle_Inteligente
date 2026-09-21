@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, g
 
 from utils.auth_middleware import login_required, require_role
 from utils.db import get_conn, put_conn
+from utils.planilha import resposta_csv, formatar_hora
 
 bp = Blueprint("eventos", __name__, url_prefix="/api/eventos")
 
@@ -323,6 +324,87 @@ def listar_participantes(evento_id):
         put_conn(conn)
 
     return jsonify(participantes)
+
+
+@bp.route("/<int:evento_id>/presenca.csv", methods=["GET"])
+@login_required
+@require_role("professor", "admin")
+def exportar_presenca(evento_id):
+    """A lista de presença da aula, pronta pra abrir no Excel.
+
+    POR QUE ISTO EXISTE
+    Até aqui o dado ficava preso no aplicativo. O professor continua tendo
+    que lançar presença no sistema da faculdade, e sem exportação ele faz
+    isso olhando a tela do celular e digitando - que é exatamente o
+    trabalho manual que o projeto existe pra eliminar.
+
+    A planilha leva as duas leituras, e não só presente/ausente. Quem
+    entrou e ficou tem duas; quem passou na porta e sumiu tem uma. Exportar
+    só a situação jogaria fora justamente o que este sistema sabe e uma
+    lista assinada não sabe.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select titulo, local, data_inicio from eventos where id = %s",
+                (evento_id,),
+            )
+            evento = cur.fetchone()
+            if not evento:
+                return jsonify({"erro": "Evento não encontrado"}), 404
+
+            cur.execute(
+                """
+                select p.nome, p.matricula, ep.status, ep.origem,
+                       leituras.primeira_leitura,
+                       leituras.ultima_leitura,
+                       leituras.total as leituras
+                from evento_participantes ep
+                join profiles p on p.id = ep.usuario_id
+                left join lateral (
+                    select min(al.criado_em) as primeira_leitura,
+                           max(al.criado_em) as ultima_leitura,
+                           count(*) as total
+                    from access_logs al
+                    where al.evento_id = ep.evento_id
+                      and al.usuario_id = ep.usuario_id
+                      and al.status = 'liberado'
+                ) leituras on true
+                where ep.evento_id = %s
+                order by p.nome
+                """,
+                (evento_id,),
+            )
+            participantes = cur.fetchall()
+    finally:
+        put_conn(conn)
+
+    linhas = []
+    for a in participantes:
+        presente = a["status"] == "liberado"
+        linhas.append([
+            a["nome"],
+            a["matricula"],
+            "Presente" if presente else "Ausente",
+            formatar_hora(a["primeira_leitura"]),
+            formatar_hora(a["ultima_leitura"]),
+            # Permanência é ter sido visto duas vezes na mesma aula: uma na
+            # chegada e outra depois. Com uma leitura só o sistema sabe que
+            # a pessoa entrou e mais nada - dizer "sim" ali seria afirmar o
+            # que não se mediu.
+            "Sim" if (a["leituras"] or 0) > 1 else "Nao",
+            a["leituras"] or 0,
+            "Turma" if a["origem"] == "turma" else "Convite",
+        ])
+
+    data = evento["data_inicio"].astimezone().strftime("%Y-%m-%d")
+    return resposta_csv(
+        f"presenca {evento['titulo']} {data}",
+        ["Nome", "Matricula", "Situacao", "Primeira leitura", "Ultima leitura",
+         "Permanencia", "Leituras", "Origem"],
+        linhas,
+    )
 
 
 @bp.route("/<int:evento_id>/participantes/<uuid:usuario_id>", methods=["DELETE"])
