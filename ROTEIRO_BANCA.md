@@ -251,7 +251,8 @@ orientador vai fazer, e a resposta é melhor do que ele espera:
 > "Nada foi enviado pra Raspberry. Ela não sabe que essa aula existe, e não
 > precisa saber.
 >
-> A Pi é burra de propósito: ela só tira foto e pergunta 'pode entrar?'. Todo
+> A Pi não decide nada, de propósito: ela só tira foto e pergunta 'pode
+> entrar?'. Todo
 > o reconhecimento e toda a regra ficam no servidor. Quando alguém chega, o
 > servidor é que pergunta: tem aula acontecendo agora **na sala deste
 > leitor**? Quem é esse leitor, ele mesmo diz — autentica com uma chave
@@ -408,8 +409,8 @@ O que faz funcionar é guardar até 5 capturas por pessoa e comparar sempre com
 a mais próxima delas. Com uma foto só por pessoa, a porta barraria quem tem
 direito — é literalmente por isso que o cadastro de hoje teve três.
 
-**"Por que a Raspberry não faz o reconhecimento?"** — Ela é burra de
-propósito: tira foto e pergunta. Todo o DeepFace e toda a regra de negócio
+**"Por que a Raspberry não faz o reconhecimento?"** — Ela não decide nada,
+de propósito: tira foto e pergunta. Todo o DeepFace e toda a regra de negócio
 ficam no servidor. O Pi não precisa de TensorFlow, e trocar o modelo não
 exige mexer em hardware nenhum.
 

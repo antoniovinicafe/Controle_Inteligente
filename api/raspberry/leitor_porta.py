@@ -1,7 +1,7 @@
 """
 Leitor facial da porta - é ISTO que roda na Raspberry Pi.
 
-O Pi é burro de propósito: ele só tira foto e pergunta ao servidor
+O Pi não decide nada, de propósito: ele só tira foto e pergunta ao servidor
 "pode entrar?". Todo o reconhecimento (DeepFace/Facenet512) e toda a
 regra de negócio (tem aula agora nesta sala? essa pessoa foi
 convidada?) ficam no Flask. Por isso o Pi NÃO precisa de TensorFlow,

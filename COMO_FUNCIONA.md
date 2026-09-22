@@ -43,7 +43,7 @@ pequeno, rodando `api/raspberry/totem.py` em tela cheia.
 
 **O que ela NÃO faz, e é o ponto principal:** nada de reconhecimento. Não tem
 TensorFlow, não tem DeepFace, não tem nenhum rosto guardado, não tem senha de
-banco. Ela é deliberadamente burra.
+banco. Ela não decide nada, e isso é decisão de projeto.
 
 > **Como explicar:** "A Pi só tira foto e pergunta 'pode entrar?'. Toda a
 > inteligência está no servidor. Isso não é preguiça — é o que permite trocar

@@ -11,8 +11,8 @@ outro.
 POR QUE O CACHE FICA AQUI, E NÃO NA PI
 A ideia anterior era a Pi guardar os rostos. Isso obriga a Pi a calcular o
 embedding sozinha - Facenet512 mais o anti-spoofing rodando nela - que é
-exatamente o que ela não faz, e o motivo de ela ser burra: só tira foto e
-pergunta. Como o elo que quebra é a internet, e não a rede local, basta o
+exatamente o que ela não faz, e o motivo de ela ser tão simples: só tira
+foto e pergunta. Como o elo que quebra é a internet, e não a rede local, basta o
 FLASK conseguir responder sem sair do prédio. A Pi não muda em nada.
 
 O QUE ENTRA NA CÓPIA

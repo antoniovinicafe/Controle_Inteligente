@@ -303,7 +303,7 @@ O que falta:
 
   **Começado em 13/08/2026, e a solução mudou de lugar.** O plano era a Pi
   guardar a cópia — mas isso a obriga a calcular o embedding sozinha, que é
-  justamente o que ela não faz e o motivo de ser burra. Como o elo que
+  justamente o que ela não faz, e o motivo de ela ser tão simples. Como o elo que
   quebra é a internet, e não a rede local, a cópia fica no **Flask**:
   `api/services/cache_local.py` monta um retrato dos rostos, dos eventos da
   janela e dos dispositivos, e responde às mesmas três perguntas da porta

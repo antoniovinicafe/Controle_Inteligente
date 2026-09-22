@@ -18,8 +18,8 @@ gravada sozinha — sem lista de chamada, sem crachá, sem ninguém fazer nada.
 São três partes:
 
 - **Um leitor na porta** — Raspberry Pi com câmera e uma tela em modo totem
-  que responde LIBERADO ou NEGADO. Ela é **burra de propósito**: só tira
-  foto e pergunta ao servidor, não reconhece nada
+  que responde LIBERADO ou NEGADO. Ela **não decide nada**, de propósito: só
+  tira foto e pergunta ao servidor, não reconhece nada
 - **Um servidor** — onde está toda a inteligência: reconhecimento facial
   (Facenet512), detecção de fraude (MiniFASNet) e as regras de acesso
 - **Um aplicativo** — professor cria aulas e acompanha quem entrou; aluno
