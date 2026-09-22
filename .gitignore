@@ -1,0 +1,8 @@
+# Ignorados na raiz. Cada parte tem o seu: api/.gitignore e app/.gitignore.
+
+# Sobra de ferramenta de design que rodou no diretório do projeto e puxou
+# dependências de Node. Nada aqui usa npm: o aplicativo é Flutter e o
+# servidor é Python. Pode apagar a pasta sem medo.
+node_modules/
+package.json
+package-lock.json
